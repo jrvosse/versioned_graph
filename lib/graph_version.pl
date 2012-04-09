@@ -11,6 +11,8 @@
 :- use_module(user(user_db)).
 :- use_module(library(settings)).
 
+:- rdf_register_ns(gv, 'http://semanticweb.cs.vu.nl/graph/version/').
+
 :- meta_predicate
 	gv_resource_commit(+,+,0,-,-).
 
