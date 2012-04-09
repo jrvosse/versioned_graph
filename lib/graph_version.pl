@@ -7,9 +7,6 @@
 	  ]).
 
 :- use_module(library('semweb/rdf_db')).
-:- use_module(library('semweb/rdfs')).
-:- use_module(user(user_db)).
-:- use_module(library(settings)).
 
 :- rdf_register_ns(gv, 'http://semanticweb.cs.vu.nl/graph/version/').
 
