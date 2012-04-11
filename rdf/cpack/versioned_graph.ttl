@@ -24,7 +24,11 @@
 	    ] ;
 	cpack:description
 
-"""Package description goes here.  You can use PlDoc markup.
+"""Package to version RDF named graphs.  
+Where in the GIT model every commit refers to a complete tree,
+in this package every commit refers to a complete graph.
+The current implementation naively copies entire graphs.
+We will need to look into smarter implementations later.
 """ .
 
 
