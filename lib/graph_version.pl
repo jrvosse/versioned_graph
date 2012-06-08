@@ -8,8 +8,6 @@
 
 :- use_module(library('semweb/rdf_db')).
 
-:- rdf_register_ns(gv, 'http://semanticweb.cs.vu.nl/graph/version/').
-
 :- meta_predicate
 	gv_resource_commit(+,+,0,-,-).
 
