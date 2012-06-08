@@ -1,1 +1,2 @@
-config(versioned_graph, link).
+config(versioned_graph,    link).
+config(versioned_graphviz, link).
