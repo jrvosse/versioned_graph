@@ -11,7 +11,7 @@
 :- rdf_register_ns(gv, 'http://semanticweb.cs.vu.nl/graph/version/').
 
 :- meta_predicate
-	gv_resource_commit(+,+,0,-,-).
+	gv_resource_commit(+,+,+,-,-).
 
 %%      gv_resource_commit(+Resource, +User, :Action, -Commit, -Graph)
 %
@@ -28,15 +28,23 @@ gv_resource_commit(Resource, User, Action, Commit, Graph) :-
 	get_time(TimeStamp),
 	gv_resource_head(Resource, ParentCommit),
 	gv_resource_graph(ParentCommit, ParentGraph),
-	rdf_bnode(Graph),
-	rdf_bnode(Commit),
-	copy_rdf_graph(ParentGraph, Graph),
-	rdf_transaction(Action),
-	rdf_transaction((rdf_assert(Commit, gv:parent, ParentCommit, Commit),
-			 rdf_assert(Commit, gv:graph, Graph, Commit),
-			 rdf_assert(Commit, dcterms:creator, User, Commit),
-			 rdf_assert(Commit, dcterms:date, literal(TimeStamp), Commit))),
-	gv_move_resource_head(Resource, Commit).
+	create_merged_graph(ParentGraph, Action, Graph),
+	CommitContent = [ po(gv:parent, ParentCommit),
+			  po(gv:graph, Graph),
+			  po(dcterms:creator, User),
+			  po(dcterms:date, literal(TimeStamp), Commit)
+			],
+	sort(CommitContent, KeyValue),
+	rdf_global_term(KeyValue, Pairs),
+	variant_sha1(Pairs, Hash),
+	atom_concat(cm, Hash, Local),
+	rdf_global_id(an:Local, Commit),
+	gv_move_resource_head(Resource, Commit),
+	rdf_transaction(
+	    forall(member(po(P,O), Pairs),
+		   rdf_assert(Commit, P, O, Commit))
+		       ).
+
 
 %%	gv_resource_head(+Resource, -Commit) is det.
 %
@@ -89,13 +97,22 @@ gv_move_resource_head(Resource, Commit) :-
 	),
 	rdf_assert(Commit, gv:head, Resource, heads).
 
-
-
-copy_rdf_graph(init, _) :- !.
-copy_rdf_graph(From, To) :-
-	rdf_transaction(forall(rdf(S,P,O,From),
-			       rdf_assert(S,P,O,To))).
-
+create_merged_graph(OldGraph, Action, NewGraph) :-
+	Action =.. [ Mode, Triples0],
+	findall(rdf(S,P,O),
+		rdf(S,P,O,OldGraph),
+		OldTriples0),
+	sort(OldTriples0, OldTriples),
+	sort(Triples0, Triples),
+	(   Mode = add
+	->  ord_union(OldTriples, Triples, AllTriples)
+	;   ord_subtract(OldTriples, Triples, AllTriples)
+	),
+	variant_sha1(AllTriples, Hash),
+	atom_concat(g, Hash, Local),
+	rdf_global_id(an:Local, NewGraph),
+	rdf_transaction(forall(member(rdf(S,P,O), AllTriples),
+			       rdf_assert(S,P,O,NewGraph))).
 
 gv_delete_ancestors(init) :- !.
 gv_delete_ancestors(Commit) :-
