@@ -10,8 +10,8 @@
 
 :- rdf_register_ns(gv, 'http://semanticweb.cs.vu.nl/graph/version/').
 
-:- meta_predicate
-	gv_resource_commit(+,+,+,-,-).
+% :- meta_predicate
+%	gv_resource_commit(+,+,+,-,-).
 
 %%      gv_resource_commit(+Resource, +User, :Action, -Commit, -Graph)
 %
