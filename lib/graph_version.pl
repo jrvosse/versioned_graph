@@ -28,16 +28,16 @@ gv_resource_commit(Resource, User, Action, Commit, Graph) :-
 	gv_resource_head(Resource, ParentCommit),
 	gv_resource_graph(ParentCommit, ParentGraph),
 	create_merged_graph(ParentGraph, Action, Graph),
-	CommitContent = [ po(gv:parent, ParentCommit),
+	CommitContent = [ po(rdf:type, gv:'Commit'),
+			  po(gv:parent, ParentCommit),
 			  po(gv:graph, Graph),
 			  po(dcterms:creator, User),
 			  po(dcterms:date, literal(TimeStamp), Commit)
 			],
-	sort(CommitContent, KeyValue),
-	rdf_global_term(KeyValue, Pairs),
+	rdf_global_term(CommitContent, Pairs0),
+	sort(Pairs0, Pairs),
 	variant_sha1(Pairs, Hash),
-	atom_concat(cm, Hash, Local),
-	rdf_global_id(an:Local, Commit),
+	gv_hash_uri('hash/commit_', Hash, Commit),
 	gv_move_resource_head(Resource, Commit),
 	rdf_transaction(
 	    forall(member(po(P,O), Pairs),
@@ -108,8 +108,7 @@ create_merged_graph(OldGraph, Action, NewGraph) :-
 	;   ord_subtract(OldTriples, Triples, AllTriples)
 	),
 	variant_sha1(AllTriples, Hash),
-	atom_concat(g, Hash, Local),
-	rdf_global_id(an:Local, NewGraph),
+	gv_hash_uri('hash/graph_', Hash, NewGraph),
 	rdf_transaction(forall(member(rdf(S,P,O), AllTriples),
 			       rdf_assert(S,P,O,NewGraph))).
 
@@ -140,6 +139,6 @@ gv_delete_old_graphs :-
 %	public server location, Prefix and Hash.
 
 gv_hash_uri(Prefix, Hash, URI) :-
-	concat_atom(Prefix,Hash, Local),
+	atom_concat(Prefix,Hash, Local),
 	http_absolute_uri(root(Local), URI).
 
