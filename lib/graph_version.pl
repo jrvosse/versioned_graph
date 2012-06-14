@@ -3,15 +3,14 @@
 	   gv_resource_head/2,
 	   gv_resource_graph/2,
 	   gv_resource_last_user_commit/3,
-	   gv_delete_old_graphs/0
+	   gv_delete_old_graphs/0,
+	   gv_hash_uri/3
 	  ]).
 
-:- use_module(library('semweb/rdf_db')).
+:- use_module(library(semweb/rdf_db)).
+:- use_module(library(http/http_path)).
 
 :- rdf_register_ns(gv, 'http://semanticweb.cs.vu.nl/graph/version/').
-
-% :- meta_predicate
-%	gv_resource_commit(+,+,+,-,-).
 
 %%      gv_resource_commit(+Resource, +User, :Action, -Commit, -Graph)
 %
@@ -134,3 +133,13 @@ gv_delete_old_graphs :-
 	forall(member(H, Parents),
 	       gv_delete_ancestors(H)
 	      ).
+
+%%	gv_hash_uri(+Prefix, +Hash, -URI) is det.
+%
+%	URI is the uri constructed by concatenating the current
+%	public server location, Prefix and Hash.
+
+gv_hash_uri(Prefix, Hash, URI) :-
+	concat_atom(Prefix,Hash, Local),
+	http_absolute_uri(root(Local), URI).
+
