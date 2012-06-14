@@ -133,6 +133,15 @@ gv_delete_old_graphs :-
 	       gv_delete_ancestors(H)
 	      ).
 
+
+:- if(\+source_exports(library(http/http_path), http_absolute_uri/2)).
+
+% This will be in SWI-Prolog V6.1.7 and beyond
+http_absolute_uri(Spec, URI) :-
+	atom_concat('http://localhost/',Spec,URI).
+
+:- endif.
+
 %%	gv_hash_uri(+Prefix, +Hash, -URI) is det.
 %
 %	URI is the uri constructed by concatenating the current
