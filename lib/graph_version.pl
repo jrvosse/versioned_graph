@@ -4,13 +4,16 @@
 	   gv_resource_graph/2,
 	   gv_resource_last_user_commit/3,
 	   gv_delete_old_graphs/0,
-	   gv_hash_uri/3
+	   gv_hash_uri/2,
+	   compute_hash/2
 	  ]).
 
 :- use_module(library(semweb/rdf_db)).
-:- use_module(library(http/http_path)).
+:- use_module(library(semweb/rdf_turtle_write)).
 
-:- rdf_register_ns(gv, 'http://semanticweb.cs.vu.nl/graph/version/').
+
+:- rdf_register_ns(gv,   'http://semanticweb.cs.vu.nl/graph/version/').
+:- rdf_register_ns(hash, 'http://semanticweb.cs.vu.nl/graph/hash/').
 
 %%      gv_resource_commit(+Resource, +User, :Action, -Commit, -Graph)
 %
@@ -107,10 +110,35 @@ create_merged_graph(OldGraph, Action, NewGraph) :-
 	->  ord_union(OldTriples, Triples, AllTriples)
 	;   ord_subtract(OldTriples, Triples, AllTriples)
 	),
-	variant_sha1(AllTriples, Hash),
-	gv_hash_uri('hash/graph_', Hash, NewGraph),
+	compute_hash(AllTriples, Hash),
+	gv_hash_uri(Hash, NewGraph),
 	rdf_transaction(forall(member(rdf(S,P,O), AllTriples),
 			       rdf_assert(S,P,O,NewGraph))).
+
+%%	compute_hash(+Triples, ?Hash) is det.
+%
+%	True of Hash is a SHA1 hash of the list of Triples.
+%	Hash is computed using the same recipee git uses.
+%	So, if one would run "git hash-object" on the
+%       file containing the canonical turtle serialisation of
+%       Triples, git would generate the same hash.
+
+
+compute_hash(Triples, Hash) :-
+	with_output_to(
+	    atom(Content),
+	    rdf_save_canonical_turtle(
+		stream(current_output),
+		[ expand(triple_in(Triples)),
+		  encoding(wchar_t)])),
+	write_length(Content, Clen, []),
+	format(atom(Out), 'blob ~w\0~w', [Clen, Content]),
+	sha_hash(Out, Sha, []),
+	hash_atom(Sha, Hash).
+
+triple_in(RDF, S,P,O,_G) :-
+	member(rdf(S,P,O), RDF).
+
 
 gv_delete_ancestors(init) :- !.
 gv_delete_ancestors(Commit) :-
@@ -134,20 +162,16 @@ gv_delete_old_graphs :-
 	      ).
 
 
-:- if(\+source_exports(library(http/http_path), http_absolute_uri/2)).
-
-% This will be in SWI-Prolog V6.1.7 and beyond
-http_absolute_uri(Spec, URI) :-
-	atom_concat('http://localhost/',Spec,URI).
-
-:- endif.
-
 %%	gv_hash_uri(+Prefix, +Hash, -URI) is det.
 %
-%	URI is the uri constructed by concatenating the current
-%	public server location, Prefix and Hash.
+%	URI is a uri constructed by concatenating the
+%	Prefix and Hash, with some additional prefix to
+%	legal URI.
 
 gv_hash_uri(Prefix, Hash, URI) :-
 	atom_concat(Prefix,Hash, Local),
-	http_absolute_uri(root(Local), URI).
+	rdf_global_id(hash:Local, URI).
 
+gv_hash_uri(Hash, URI) :-
+	atom_concat(x, Hash, Local),
+	rdf_global_id(hash:Local, URI).
