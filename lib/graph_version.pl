@@ -5,7 +5,7 @@
 	   gv_resource_last_user_commit/3,
 	   gv_delete_old_graphs/0,
 	   gv_hash_uri/2,
-	   compute_hash/2
+	   gv_compute_hash/2
 	  ]).
 
 :- use_module(library(semweb/rdf_db)).
@@ -40,7 +40,7 @@ gv_resource_commit(Resource, User, Action, Commit, Graph) :-
 	rdf_global_term(CommitContent, Pairs0),
 	sort(Pairs0, Pairs),
 	variant_sha1(Pairs, Hash),
-	gv_hash_uri('hash/commit_', Hash, Commit),
+	gv_hash_uri(Hash, Commit),
 	gv_move_resource_head(Resource, Commit),
 	rdf_transaction(
 	    forall(member(po(P,O), Pairs),
@@ -110,12 +110,12 @@ create_merged_graph(OldGraph, Action, NewGraph) :-
 	->  ord_union(OldTriples, Triples, AllTriples)
 	;   ord_subtract(OldTriples, Triples, AllTriples)
 	),
-	compute_hash(AllTriples, Hash),
+	gv_compute_hash(AllTriples, Hash),
 	gv_hash_uri(Hash, NewGraph),
 	rdf_transaction(forall(member(rdf(S,P,O), AllTriples),
 			       rdf_assert(S,P,O,NewGraph))).
 
-%%	compute_hash(+Triples, ?Hash) is det.
+%%	gv_compute_hash(+Triples, ?Hash) is det.
 %
 %	True of Hash is a SHA1 hash of the list of Triples.
 %	Hash is computed using the same recipee git uses.
@@ -124,7 +124,7 @@ create_merged_graph(OldGraph, Action, NewGraph) :-
 %       Triples, git would generate the same hash.
 
 
-compute_hash(Triples, Hash) :-
+gv_compute_hash(Triples, Hash) :-
 	with_output_to(
 	    atom(Content),
 	    rdf_save_canonical_turtle(
@@ -162,15 +162,12 @@ gv_delete_old_graphs :-
 	      ).
 
 
-%%	gv_hash_uri(+Prefix, +Hash, -URI) is det.
+%%	gv_hash_uri(Hash, -URI) is det.
 %
 %	URI is a uri constructed by concatenating the
-%	Prefix and Hash, with some additional prefix to
+%	Hash with some additional prefix to make it a
 %	legal URI.
 
-gv_hash_uri(Prefix, Hash, URI) :-
-	atom_concat(Prefix,Hash, Local),
-	rdf_global_id(hash:Local, URI).
 
 gv_hash_uri(Hash, URI) :-
 	atom_concat(x, Hash, Local),
