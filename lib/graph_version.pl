@@ -1,5 +1,5 @@
 :- module(graph_version,
-	  [gv_resource_commit/5,
+	  [gv_resource_commit/6,
 	   gv_resource_head/2,
 	   gv_resource_graph/2,
 	   gv_resource_last_user_commit/3,
@@ -15,8 +15,9 @@
 :- rdf_register_ns(gv,   'http://semanticweb.cs.vu.nl/graph/version/').
 :- rdf_register_ns(hash, 'http://semanticweb.cs.vu.nl/graph/hash/').
 
-%%      gv_resource_commit(+Resource, +User, :Action, -Commit, -Graph)
+%%      gv_resource_commit(+Resource, +User, +Action, -Commit, -Graph)
 %
+%	Action is either add(Triples) or remove(Triples).
 %	Performs Action on the most recent versioned named graph
 %	associated with Resource, and stores the result in Graph.
 %	The action is commited by creating a Commit object, this object
@@ -25,17 +26,30 @@
 %	* gv:graph to Graph
 %	* dc:creator to User
 %	* dc:date to the current time
+%
+%	Todo: Fix MT issues, just a mutex is not sufficient.
+%	Needs true git-like branching model?
 
-gv_resource_commit(Resource, User, Action, Commit, Graph) :-
+
+
+gv_resource_commit(Resource, User, Comment, Action, Commit, Graph) :-
+	with_mutex(Resource, do_gv_resource_commit(Resource, User, Comment, Action, Commit, Graph)).
+
+do_gv_resource_commit(Resource, User, Comment, Action, Commit, Graph) :-
 	get_time(TimeStamp),
 	gv_resource_head(Resource, ParentCommit),
 	gv_resource_graph(ParentCommit, ParentGraph),
 	create_merged_graph(ParentGraph, Action, Graph),
+	(   Comment = ''
+	->  CommentPair = []
+	;   CommentPair = [ po(rdfs:comment, literal('Comment')) ]
+	),
 	CommitContent = [ po(rdf:type, gv:'Commit'),
 			  po(gv:parent, ParentCommit),
 			  po(gv:graph, Graph),
 			  po(dcterms:creator, User),
 			  po(dcterms:date, literal(TimeStamp), Commit)
+			  | CommentPair
 			],
 	rdf_global_term(CommitContent, Pairs0),
 	sort(Pairs0, Pairs),
@@ -162,7 +176,7 @@ gv_delete_old_graphs :-
 	      ).
 
 
-%%	gv_hash_uri(Hash, -URI) is det.
+%%	gv_hash_uri(+Hash, -URI) is det.
 %
 %	URI is a uri constructed by concatenating the
 %	Hash with some additional prefix to make it a
