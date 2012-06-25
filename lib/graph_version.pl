@@ -42,7 +42,7 @@ do_gv_resource_commit(Resource, User, Comment, Action, Commit, Graph) :-
 	create_merged_graph(ParentGraph, Action, Graph),
 	(   Comment = ''
 	->  CommentPair = []
-	;   CommentPair = [ po(rdfs:comment, literal('Comment')) ]
+	;   CommentPair = [ po(rdfs:comment, literal(Comment)) ]
 	),
 	CommitContent = [ po(rdf:type, gv:'Commit'),
 			  po(gv:parent, ParentCommit),
