@@ -5,6 +5,7 @@
 :- use_module(library(semweb/rdf_db)).
 :- use_module(library(semweb/rdfs)).
 :- use_module(library(semweb/rdf_abstract)).
+:- use_module(library(graph_version)). % for gv: namespace
 
 :- rdf_meta
         context_triple(r, t),
