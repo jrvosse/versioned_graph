@@ -3,6 +3,7 @@
 	   gv_head/1,
 	   gv_hash_uri/2,
 	   gv_compute_hash/2,
+	   gv_copy_graph/2,
 	   gv_graph_triples/2
 	  ]).
 
@@ -13,13 +14,13 @@
 :- rdf_register_ns(gv,   'http://semanticweb.cs.vu.nl/graph/version/').
 :- rdf_register_ns(hash, 'http://semanticweb.cs.vu.nl/graph/hash/').
 
-%%      gv_resource_commit(Graph, Committer, -Commit)
+%%      gv_resource_commit(+Graph, +Committer, +Comment, -Commit)
 %
 %       Commit Graph to the versioned graph storage.
 %	The action is commited by creating a Commit object, this object
 %	links with:
 %	* gv:parent to the previous commit
-%	* gv:tree to tree representation of the current
+%	* gv:tree to the tree representation of the current
 %	  version graphs
 %	* dc:creator to Committer
 %	* dc:date to the current time
@@ -28,7 +29,7 @@
 %	Needs true git-like branching model?
 
 gv_resource_commit(Graph, Committer, Comment, Commit) :-
-	with_mutex(Graph,
+	with_mutex(gv_commit_mutex,
 		   do_gv_resource_commit(
 		       Graph, Committer, Comment, Commit)).
 
@@ -75,7 +76,7 @@ gv_head(init) :-
 %	Advance head to commit NewHead.
 
 gv_move_head(NewHead) :-
-	with_mutex(head,
+	with_mutex(gv_head_mutex,
 		   (   rdf_unload('HEAD'),
 		       rdf_assert(gv:default, gv:head, NewHead, 'HEAD'))).
 
@@ -86,6 +87,10 @@ gv_move_head(NewHead) :-
 gv_tree(Commit, Tree) :-
 	rdf(Commit, gv:tree, Tree), !.
 gv_tree(init, init).
+
+%%	gv_store_graph(+Graph, -Blob) is det.
+%
+%	Snapshot of Graph is stored in Blob.
 
 gv_store_graph(Graph, Blob) :-
 	with_output_to(
@@ -102,6 +107,10 @@ gv_store_graph(Graph, Blob) :-
 	gv_hash_uri(Hash, Blob),
 	gv_copy_graph(Graph, Blob).
 
+%%	gv_add_blob_to_tree(+Tree, +Graph, +Blob, -NewTree) is det.
+%
+%	Adds/replaces the entry of Graph in Tree to form NewTree.
+%
 gv_add_blob_to_tree(Tree, Graph, Blob, NewTree) :-
 	gv_graph_triples(Tree, Triples0),
 	rdf_equal(HashProp, gv:hash),
@@ -149,9 +158,20 @@ gv_hash_uri(Hash, URI) :-
 	atom_concat(x, Hash, Local),
 	rdf_global_id(hash:Local, URI).
 
+
+%%	gv_copy_graph(+Source, +Target) is det.
+%
+%	Copy graph Source to graph Target.
+
 gv_copy_graph(Source, Target) :-
 	gv_graph_triples(Source, Triples),
 	gv_graph_triples(Target, Triples).
+
+%%	gv_graph_triples(+Graph, -Triples) is det.
+%%	gv_graph_triples(+Graph, +Triples) is det.
+%
+%	When Triples are given, they are asserted to Graph,
+%       otherwise, Triples are unified with the triples in Graph.
 
 gv_graph_triples(Graph, Triples) :-
 	nonvar(Triples),
