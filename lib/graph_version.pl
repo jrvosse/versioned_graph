@@ -2,7 +2,8 @@
 	  [gv_resource_commit/4,
 	   gv_head/1,
 	   gv_hash_uri/2,
-	   gv_compute_hash/2
+	   gv_compute_hash/2,
+	   gv_graph_triples/2
 	  ]).
 
 :- use_module(library(semweb/rdf_db)).
