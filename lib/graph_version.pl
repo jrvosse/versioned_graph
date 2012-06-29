@@ -9,10 +9,20 @@
 
 :- use_module(library(semweb/rdf_db)).
 :- use_module(library(semweb/rdf_turtle_write)).
-
+:- use_module(library(settings)).
 
 :- rdf_register_ns(gv,   'http://semanticweb.cs.vu.nl/graph/version/').
 :- rdf_register_ns(hash, 'http://semanticweb.cs.vu.nl/graph/hash/').
+
+:- setting(gv_git_dir, atom, 'gv.git',
+	   'GIT repository for named graph snapshots').
+:- setting(gv_blob_store,   oneof([git_only, rdf_only, both]), rdf_only,
+	   'Where to store blob snapshots objects').
+:- setting(gv_tree_store,   oneof([git_only, rdf_only, both]), rdf_only,
+	   'Where to store tree snapshots objects').
+:- setting(gv_commit_store, oneof([git_only, rdf_only, both]), rdf_only,
+	   'Where to store commit objects').
+
 
 %%      gv_resource_commit(+Graph, +Committer, +Comment, -Commit)
 %
