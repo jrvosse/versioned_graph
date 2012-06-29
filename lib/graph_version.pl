@@ -104,7 +104,16 @@ gv_tree(init, init).
 %
 %	Snapshot of Graph is stored in Blob.
 
-gv_store_graph(Graph, Blob, _Options) :-
+gv_store_graph(Graph, Blob, Options) :-
+	setting(gv_blob_store, StoreMode),
+	(   StoreMode = both
+	->  gv_store_graph_(rdf_only, Graph, Blob,  Options),
+	    gv_store_graph_(git_only, Graph, Blob2, Options),
+	    assertion(Blob == Blob2)
+	;   gv_store_graph_(StoreMode, Graph, Blob, Options)
+	).
+
+gv_store_graph_(rdf_only, Graph, Blob, _Options) :-
 	with_output_to(
 	    atom(Content),
 	    rdf_save_canonical_turtle(
@@ -119,9 +128,9 @@ gv_store_graph(Graph, Blob, _Options) :-
 	gv_hash_uri(Hash, Blob),
 	gv_copy_graph(Graph, Blob).
 
-gv_store_graph_under_development(Graph, Blob, Options) :-
-	tmp_file_stream(wchar_t, Tmp, Stream), close(Stream),
-	rdf_save_canonical_turtle(Tmp, [graph(Graph), encoding(wchar_t)]),
+gv_store_graph_(git_only, Graph, Blob, Options) :-
+	tmp_file_stream(text, Tmp, Stream), close(Stream),
+	rdf_save_canonical_turtle(Tmp, [graph(Graph)]),
 	git(['hash-object', '-w', Tmp], [output(HashCodes)|Options]),
 	atom_codes(HashN, HashCodes),
 	sub_atom(HashN, 0, _, 1, Hash), % remove trailing new line ...
@@ -195,12 +204,16 @@ gv_copy_graph(Source, Target) :-
 
 gv_graph_triples(Graph, Triples) :-
 	nonvar(Triples),
-	nonvar(Graph),
+	nonvar(Graph),!,
 	rdf_transaction(
 	    forall(member(rdf(S,P,O), Triples),
 		   rdf_assert(S,P,O, Graph))).
 
 gv_graph_triples(Graph, Triples) :-
 	nonvar(Graph),
-	var(Triples),
+	var(Triples),!,
 	findall(rdf(S,P,O), rdf(S,P,O,Graph), Triples).
+
+
+
+
