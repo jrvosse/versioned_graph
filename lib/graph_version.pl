@@ -10,6 +10,7 @@
 :- use_module(library(semweb/rdf_db)).
 :- use_module(library(semweb/rdf_turtle_write)).
 :- use_module(library(settings)).
+:- use_module(library(git)).
 
 :- rdf_register_ns(gv,   'http://semanticweb.cs.vu.nl/graph/version/').
 :- rdf_register_ns(hash, 'http://semanticweb.cs.vu.nl/graph/hash/').
@@ -45,7 +46,8 @@ gv_resource_commit(Graph, Committer, Comment, Commit) :-
 
 do_gv_resource_commit(Graph, Committer, Comment, Commit) :-
 	get_time(TimeStamp),
-	gv_store_graph(Graph, Blob),
+	setting(gv_git_dir, Dir),
+	gv_store_graph(Graph, Blob, [directory(Dir)]),
 	gv_head(HEAD),
 	gv_tree(HEAD, CurrentTree),
 	gv_add_blob_to_tree(CurrentTree, Graph, Blob, NewTree),
@@ -98,11 +100,11 @@ gv_tree(Commit, Tree) :-
 	rdf(Commit, gv:tree, Tree), !.
 gv_tree(init, init).
 
-%%	gv_store_graph(+Graph, -Blob) is det.
+%%	gv_store_graph(+Graph, -Blob, +Options) is det.
 %
 %	Snapshot of Graph is stored in Blob.
 
-gv_store_graph(Graph, Blob) :-
+gv_store_graph(Graph, Blob, _Options) :-
 	with_output_to(
 	    atom(Content),
 	    rdf_save_canonical_turtle(
@@ -116,6 +118,14 @@ gv_store_graph(Graph, Blob) :-
 	hash_atom(Sha, Hash),
 	gv_hash_uri(Hash, Blob),
 	gv_copy_graph(Graph, Blob).
+
+gv_store_graph_under_development(Graph, Blob, Options) :-
+	tmp_file_stream(wchar_t, Tmp, Stream), close(Stream),
+	rdf_save_canonical_turtle(Tmp, [graph(Graph), encoding(wchar_t)]),
+	git(['hash-object', '-w', Tmp], [output(HashCodes)|Options]),
+	atom_codes(HashN, HashCodes),
+	sub_atom(HashN, 0, _, 1, Hash), % remove trailing new line ...
+	gv_hash_uri(Hash, Blob).
 
 %%	gv_add_blob_to_tree(+Tree, +Graph, +Blob, -NewTree) is det.
 %
