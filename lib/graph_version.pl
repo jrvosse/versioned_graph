@@ -120,7 +120,7 @@ gv_store_graph_(rdf_only, Graph, Uri, _Options) :-
 	rdf_save_canonical_turtle(Out, [graph(Graph), encoding(utf8)]),
 	close(Out),
 	size_memory_file(MF, ByteSize, octet), % Git counts the size in bytes not chars!
-	memory_file_to_atom(MF, Turtle, octet),
+	memory_file_to_atom(MF, Turtle),
 	free_memory_file(MF),
 	format(atom(Blob), 'blob ~d\u0000~w', [ByteSize, Turtle]),
 	sha_hash(Blob, Sha, []),
@@ -163,7 +163,7 @@ gv_add_blob_to_tree_(rdf_only, Tree, Graph, Uri, NewTree, _Options) :-
 	atomic_list_concat(Atoms, TreeContent),
 	atom_length(TreeContent, Clen),
 	format(atom(TreeObject), 'tree ~w\0~w', [Clen, TreeContent]),
-	sha_hash(TreeObject, Sha, []),
+	sha_hash(TreeObject, Sha, [encoding(octet)]),
 	hash_atom(Sha, Hash),
 	gv_hash_uri(Hash, NewTree),
 	gv_graph_triples(NewTree, NewTriples).
