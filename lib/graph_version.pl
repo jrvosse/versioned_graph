@@ -48,10 +48,10 @@ do_gv_resource_commit(Graph, Committer, Comment, Commit) :-
 	get_time(TimeStamp),
 	setting(gv_git_dir, Dir),
 	Options = [directory(Dir)],
-	gv_store_graph(Graph, BlobHash, BlobUri, Options),
+	gv_store_graph(Graph, BlobUri, Options),
 	gv_head(HEAD),
 	gv_tree(HEAD, CurrentTree),
-	gv_add_blob_to_tree(CurrentTree, Graph, BlobHash, BlobUri, NewTree, Options),
+	gv_add_blob_to_tree(CurrentTree, Graph, BlobUri, NewTree, Options),
 
 	(   Comment = ''
 	->  CommentPair = []
@@ -105,54 +105,53 @@ gv_tree(init, init).
 %
 %	Snapshot of Graph is stored in Blob.
 
-gv_store_graph(Graph, BlobHash, BlobUri, Options) :-
+gv_store_graph(Graph, BlobUri, Options) :-
 	setting(gv_blob_store, StoreMode),
 	(   StoreMode = both
-	->  gv_store_graph_(rdf_only, Graph, BlobHash, BlobUri,  Options),
-	    gv_store_graph_(git_only, Graph, BlobHash2, _,       Options),
-	    assertion(BlobHash == BlobHash2)
-	;   gv_store_graph_(StoreMode, Graph, BlobUri, BlobHash, Options)
+	->  gv_store_graph_(rdf_only, Graph, BlobUri,  Options),
+	    gv_store_graph_(git_only, Graph, BlobUri2, Options),
+	    assertion(BlobUri == BlobUri2)
+	;   gv_store_graph_(StoreMode, Graph, BlobUri, Options)
 	).
 
-gv_store_graph_(rdf_only, Graph, Hash, Uri, _Options) :-
-	with_output_to(
-	    atom(Content),
-	    rdf_save_canonical_turtle(
-		stream(current_output),
-		[graph(Graph),
-		 encoding(utf8)
-		])),
-	atom_length(Content, Clen),
-	format(atom(Out), 'blob ~w\0~w', [Clen, Content]),
-	sha_hash(Out, Sha, []),
+gv_store_graph_(rdf_only, Graph, Uri, _Options) :-
+	new_memory_file(MF),
+	open_memory_file(MF, write, Out),
+	rdf_save_canonical_turtle(Out, [graph(Graph), encoding(utf8)]),
+	close(Out),
+	size_memory_file(MF, ByteSize, octet), % Git counts the size in bytes not chars!
+	memory_file_to_atom(MF, Turtle, octet),
+	free_memory_file(MF),
+	format(atom(Blob), 'blob ~d\u0000~w', [ByteSize, Turtle]),
+	sha_hash(Blob, Sha, []),
 	hash_atom(Sha, Hash),
 	gv_hash_uri(Hash, Uri),
 	gv_copy_graph(Graph, Uri).
 
-gv_store_graph_(git_only, Graph, Hash, Uri, Options) :-
+gv_store_graph_(git_only, Graph, Uri, Options) :-
 	tmp_file_stream(text, Tmp, Stream), close(Stream),
-	rdf_save_canonical_turtle(Tmp, [graph(Graph)]),
+	rdf_save_canonical_turtle(Tmp, [graph(Graph), encoding(utf8)]),
 	git(['hash-object', '-w', Tmp], [output(HashCodes)|Options]),
 	atom_codes(HashN, HashCodes),
 	sub_atom(HashN, 0, _, 1, Hash), % remove trailing new line ...
 	gv_hash_uri(Hash, Uri).
 
-%%	gv_add_blob_to_tree(+Tree, +Graph, +Blob, -NewTree, +Options) is
-%	det.
+
+%%	gv_add_blob_to_tree(+Tree,+Graph,+Blob,-NewTree,+Opts) is det.
 %
 %	Adds/replaces the entry of Graph in Tree to form NewTree.
 %
-gv_add_blob_to_tree(Tree, Graph, Hash, Uri, NewTree, Options) :-
+gv_add_blob_to_tree(Tree, Graph, Uri, NewTree, Options) :-
 	setting(gv_tree_store, StoreMode),
 	(   StoreMode == both
-	->  gv_add_blob_to_tree_(rdf_only, Tree, Graph, Hash, Uri, NewTree, Options),
-	    gv_add_blob_to_tree_(git_only, Tree, Graph, Hash, Uri, NewTree1,Options),
+	->  gv_add_blob_to_tree_(rdf_only, Tree, Graph, Uri, NewTree, Options),
+	    gv_add_blob_to_tree_(git_only, Tree, Graph, Uri, NewTree1,Options),
 	    assertion(NewTree == NewTree1)
-	;   gv_add_blob_to_tree_(StoreMode,Tree, Graph, Hash, Uri, NewTree, Options)
+	;   gv_add_blob_to_tree_(StoreMode,Tree, Graph, Uri, NewTree, Options)
 	).
 
 
-gv_add_blob_to_tree_(rdf_only, Tree, Graph, _BlobHash, Uri, NewTree, _Options) :-
+gv_add_blob_to_tree_(rdf_only, Tree, Graph, Uri, NewTree, _Options) :-
 	gv_graph_triples(Tree, Triples0),
 	rdf_equal(HashProp, gv:blob),
 	(   rdf(Graph, HashProp, OldBlob, Tree)
@@ -169,7 +168,8 @@ gv_add_blob_to_tree_(rdf_only, Tree, Graph, _BlobHash, Uri, NewTree, _Options) :
 	gv_hash_uri(Hash, NewTree),
 	gv_graph_triples(NewTree, NewTriples).
 
-gv_add_blob_to_tree_(git_only, _Tree, Graph, BlobHash, _Uri, NewTree, Options) :-
+gv_add_blob_to_tree_(git_only, _Tree, Graph, Uri, NewTree, Options) :-
+	gv_hash_uri(BlobHash, Uri),
 	git(['update-index', '--add', '--cacheinfo', '100644', BlobHash, Graph],
 	    Options),
 	git(['write-tree'], [output(HashCodes)|Options]),
@@ -255,7 +255,11 @@ gv_graph_triples(Graph, Triples) :-
 	findall(rdf(S,P,O), rdf(S,P,O,Graph), Triples).
 
 
-%%	bydirectional hash atom ...
+%%	my_hash_atom(+Codes, -Hash) is det.
+%       my_hash_atom(-Codes, +Hash) is det.
+%
+%       Bi-directional version of hash_atom/2 ...
+%
 my_hash_atom(Codes, Hash) :-
 	nonvar(Codes),
 	!,
