@@ -45,18 +45,18 @@ gv_resource_commit(Graph, Committer, Comment, Commit) :-
 		       Graph, Committer, Comment, Commit)).
 
 do_gv_resource_commit(Graph, Committer, Comment, Commit) :-
-	get_time(TimeStamp),
 	setting(gv_git_dir, Dir),
 	Options = [directory(Dir)],
 	gv_store_graph(Graph, BlobUri, Options),
 	gv_head(HEAD),
 	gv_tree(HEAD, CurrentTree),
 	gv_add_blob_to_tree(CurrentTree, Graph, BlobUri, NewTree, Options),
-
 	(   Comment = ''
 	->  CommentPair = []
 	;   CommentPair = [ po(rdfs:comment, literal(Comment)) ]
 	),
+	get_time(Now), format_time(atom(TimeStamp), '%s %z', Now),
+
 	CommitContent = [ po(rdf:type, gv:'Commit'),
 			  po(gv:parent, HEAD),
 			  po(gv:tree, NewTree),
