@@ -61,7 +61,7 @@ do_gv_resource_commit(Graph, Committer, Comment, Commit) :-
 			  po(gv:parent, HEAD),
 			  po(gv:tree, NewTree),
 			  po(dcterms:creator, Committer),
-			  po(dcterms:date, literal(TimeStamp), Commit)
+			  po(dcterms:date, literal(TimeStamp))
 			  | CommentPair
 			],
 	rdf_global_term(CommitContent, Pairs0),
