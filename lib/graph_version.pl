@@ -226,7 +226,8 @@ gv_add_blob_to_tree(Tree, Graph, Uri, NewTree, Options) :-
 	->  selectchk(rdf(Graph, HashProp, OldBlob), Triples0, Triples1)
 	;   Triples1 = Triples0
 	),
-	NewTriples =  [rdf(Graph, HashProp, Uri)|Triples1],
+	NewTriples0 =  [rdf(Graph, HashProp, Uri)|Triples1],
+	sort(NewTriples0, NewTriples),
 	maplist(tree_triple_to_git, NewTriples, Atoms),
 	atomic_list_concat(Atoms, TreeContent),
 	atom_length(TreeContent, Clen),
