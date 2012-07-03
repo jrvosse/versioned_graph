@@ -27,32 +27,89 @@
 	   'Where to store tree snapshots objects').
 :- setting(gv_commit_store, oneof([git_only, rdf_only, both]), rdf_only,
 	   'Where to store commit objects').
+:- setting(gv_refs_store, oneof([git_only, rdf_only, both]), rdf_only,
+	   'Where to store HEAD, refs etc.').
+
+:- listen(settings(changed(graph_version:_Setting, _Old, _New)),
+	  gv_init).
 
 %%	git_init is det.
 %
-%       Intialise the HEAD to refs/heads/master if no HEAD exist.
+%       Initialise the RDF and/or GIT version repositories.
 gv_init :-
-	(   rdf_graph('HEAD')
-	->  true
-	;   rdf_assert(gv:default, gv:branch, localgit:'refs/heads/master', 'HEAD')
+	setting(gv_git_dir, Dir),
+	setting(gv_blob_store, BS),
+	setting(gv_tree_store, TS),
+	setting(gv_commit_store, CS),
+	sort([BS,TS,CS], StorageOpts),
+	(   (StorageOpts == [git_only] ; rdf_graph('HEAD'))
+	->  true % no need to init RDF storage
+	;   gv_init(rdf)
+	),
+
+	(   (StorageOpts == [rdf_only] ; exists_directory(Dir) )
+	->  true % no need to init git storage
+	;   gv_init(git)
 	).
+
+
+gv_init(rdf) :-
+	rdf_assert(gv:default, gv:branch, localgit:'refs/heads/master', 'HEAD').
+
+
+gv_init(git) :-
+	setting(gv_git_dir, Dir),
+	directory_file_path(Dir, '.git', DotDir),
+	directory_file_path(DotDir, objects, ObjectsDir),
+	directory_file_path(DotDir, 'HEAD', HEAD),
+	directory_file_path(DotDir, refs, RefsDir),
+	directory_file_path(RefsDir, heads, RefsHeadsDir),
+	make_directory_path(DotDir),
+	make_directory_path(ObjectsDir),
+	make_directory_path(RefsHeadsDir),
+	open(HEAD, write, Out),
+	write(Out, 'ref: refs/heads/master\n'),
+	close(Out).
+
+:- gv_init.
 
 %%	gv_current_branch(-Branch) is det.
 %
 %	Branch is unified with the branch name of the current branch.
 %	Note: This should be the only triple in the HEAD named graph.
 gv_current_branch(Branch) :-
-	(   rdf(gv:default, gv:branch, Branch, 'HEAD')
-	->  true
-	;   gv_init,
-	    rdf(gv:default, gv:branch, Branch, 'HEAD')
-	).
+	% assume current branch is stored in named graph HEAD:
+	rdf(gv:default, gv:branch, Branch, 'HEAD'),!.
+
+gv_current_branch(Branch) :-
+	\+ setting(gv_refs_store, rdf_only),
+	% Assume current branch is in git file HEAD:
+	setting(gv_git_dir, Dir),
+	directory_file_path(Dir, '.git', DotDir),
+	directory_file_path(DotDir, 'HEAD', HEAD),
+	read_file_to_codes(HEAD, Codes, []),
+	atom_codes(Atom, Codes),  %'ref: refs/heads/master\n'
+	sub_atom(Atom, 5,_,1, Ref),
+	rdf_global_id(localgit:Ref, Branch).
+
 
 %%	gv_branch_head(+Branch, -Commit) is det.
 %
 %	Commit is unified with the tip of branch Branch.
 gv_branch_head(Branch, Commit) :-
 	rdf(Branch, gv:tip, Commit, 'refs/heads'), !.
+
+gv_branch_head(Branch, Commit) :-
+	\+ setting(gv_refs_store, rdf_only),
+	% Assume current branch is in git refs file:
+	setting(gv_git_dir, Dir),
+	rdf_global_id(localgit:Ref, Branch),
+	directory_file_path(Dir, '.git', DotDir),
+	directory_file_path(DotDir, Ref, RefHead),
+	read_file_to_codes(RefHead, Codes, []),
+	atom_codes(Atom, Codes),  % hash with newline
+	sub_atom(Atom, 0, 40 ,1, Hash),
+	gv_hash_uri(Hash, Commit).
 
 %%	gv_head(+Commit) is det.
 %
@@ -89,8 +146,9 @@ gv_move_head_(NewHead) :-
 	    directory_file_path(DotGit, Local, Filename),
 	    gv_hash_uri(Hash, NewHead),
 	    open(Filename, write, Out),
-	    write(Out, Hash),
+	    write(Out, Hash), nl(Out),
 	    close(Out)
+	;   true
 	).
 
 %%      gv_resource_commit(+Graph, +Committer, +Comment, -Commit)
