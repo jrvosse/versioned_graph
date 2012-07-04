@@ -199,9 +199,9 @@ gv_resource_commit_(Graph, Committer, Comment, Commit) :-
 	->  format(atom(ParentLine), 'parent ~w~n', [ParentHash])
 	;   ParentLine = ''
 	),
-	Email='fixme@example.com',
+	Email='no_email@example.com',
 	format(atom(GitCommitContent),
-	       'tree ~w~n~wauthor ~w <~w> ~w~n~w <~w> ~w~n~n~w',
+	       'tree ~w~n~wauthor ~w <~w> ~w~ncommitter ~w <~w> ~w~n~n~w',
 	       [TreeHash, ParentLine,
 		Committer, Email, TimeStamp,
 		Committer, Email, TimeStamp,
