@@ -17,6 +17,7 @@
 :- use_module(library(semweb/rdf_turtle_write)).
 :- use_module(library(semweb/rdf_label)).
 :- use_module(library(settings)).
+:- use_module(library(git)).
 
 :- rdf_register_ns(gv,       'http://semanticweb.cs.vu.nl/graph/version/').
 :- rdf_register_ns(hash,     'http://semanticweb.cs.vu.nl/graph/hash/').
@@ -80,12 +81,23 @@ gv_init(git) :-
 %
 %	Branch is unified with the branch name of the current branch.
 %	Note: This should be the only triple in the HEAD named graph.
+
 gv_current_branch(Branch) :-
 	% assume current branch is stored in named graph HEAD:
 	rdf(gv:default, gv:branch, Branch, 'HEAD'),!.
 
 gv_current_branch(Branch) :-
 	\+ setting(gv_refs_store, rdf_only),
+	% Assume current branch is the git symbolic ref HEAD:
+	setting(gv_git_dir, Dir),
+	git(['symbolic-ref', 'HEAD'],[directory(Dir), output(OutCodes)]),!,
+	atom_codes(RefNL, OutCodes),
+	sub_atom(RefNL, 0, _, 1, Ref),
+	rdf_global_id(localgit:Ref, Branch).
+
+gv_current_branch(Branch) :-
+	\+ setting(gv_refs_store, rdf_only),
+	% as above, but without using git itself.
 	% Assume current branch is in git file HEAD:
 	setting(gv_git_dir, Dir),
 	directory_file_path(Dir, '.git', DotDir),
@@ -101,9 +113,17 @@ gv_commit_property(Commit, Prop) :-
 	rdf_global_id(gv:Local, RdfProp),
 	(   rdf(Commit, RdfProp, Value0, Commit)
 	->  literal_text(Value0, Value)
-	;   Value=in_git
+	;   Value=could_be_stored_in_git_not_implemented
 	).
 
+gv_diff(init, Commit2, [], [], OnlyIn2, []) :-
+	gv_commit_property(Commit2, tree(Tree2)),
+	gv_graph_triples(Tree2, Tree2Triples),
+	gv_graphs_changed([],Tree2Triples, C, OnlyInOne, OnlyIn2, Unchanged),
+	C= [],
+	OnlyInOne = [],
+	Unchanged = [],
+	true.
 
 gv_diff(Commit1, Commit2, Changed, OnlyIn1, OnlyIn2, UnChanged) :-
 	gv_commit_property(Commit1, tree(Tree1)),
