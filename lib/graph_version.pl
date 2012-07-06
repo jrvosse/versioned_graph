@@ -8,11 +8,14 @@
 	   gv_hash_uri/2,
 	   gv_compute_hash/2,
 	   gv_copy_graph/2,
-	   gv_graph_triples/2
+	   gv_graph_triples/2,
+	   gv_commit_property/2,
+	   gv_diff/6
 	  ]).
 
 :- use_module(library(semweb/rdf_db)).
 :- use_module(library(semweb/rdf_turtle_write)).
+:- use_module(library(semweb/rdf_label)).
 :- use_module(library(settings)).
 
 :- rdf_register_ns(gv,       'http://semanticweb.cs.vu.nl/graph/version/').
@@ -93,6 +96,59 @@ gv_current_branch(Branch) :-
 	rdf_global_id(localgit:Ref, Branch).
 
 
+gv_commit_property(Commit, Prop) :-
+	Prop =.. [Local, Value],
+	rdf_global_id(gv:Local, RdfProp),
+	(   rdf(Commit, RdfProp, Value0, Commit)
+	->  literal_text(Value0, Value)
+	;   Value=in_git
+	).
+
+
+gv_diff(Commit1, Commit2, Changed, OnlyIn1, OnlyIn2, UnChanged) :-
+	gv_commit_property(Commit1, tree(Tree1)),
+	gv_commit_property(Commit2, tree(Tree2)),
+	gv_graph_triples(Tree1, Tree1Triples),
+	gv_graph_triples(Tree2, Tree2Triples),
+	gv_graphs_changed(Tree1Triples, Tree2Triples,
+			   ChangedS, OnlyIn1, OnlyIn2, UnChanged),
+	gv_triples_changed(ChangedS, Changed).
+
+gv_triples_changed([], []).
+gv_triples_changed([Head|Tail], [S-(Diff1,Diff2)|TailResult]) :-
+	Head = S-(B1,B2),
+	gv_graph_triples(B1, Triples1),
+	gv_graph_triples(B2, Triples2),
+	ord_intersection(Triples1, Triples2, Intersect, Diff2),
+	ord_intersection(Triples2, Triples1, Intersect, Diff1),
+	gv_triples_changed(Tail, TailResult).
+
+gv_graphs_changed([], [], [], [], [], []).
+gv_graphs_changed([rdf(S1,_,_)|T], [],
+		   Changed, [S1|OI1], OI2, Same) :-
+	gv_graphs_changed(T, [], Changed, OI1, OI2, Same).
+gv_graphs_changed([], [rdf(S2,_,_)|T],
+		   Changed, OI1, [S2|OI2], Same) :-
+	gv_graphs_changed(T, [], Changed, OI1, OI2, Same).
+gv_graphs_changed([rdf(S1,P1,O1)|T1], [rdf(S2,P2,O2)|T2],
+		   Changed, OI1, OI2, Same)  :-
+	compare(C,S1,S2),
+	(   C == '<'
+	->  gv_graphs_changed(T1, [rdf(S2,P2,O2)|T2],
+			       Changed, OI1t, OI2, Same),
+	    OI1 = [S1|OI1t]
+	;   C == '>'
+	->  gv_graphs_changed([rdf(S1,P1,O1)|T1], T2,
+			       Changed, OI1, OI2t, Same),
+	    OI2 = [S2|OI2t]
+	;   (	O1 == O2
+	    ->	gv_graphs_changed(T1, T2, Changed, OI1, OI2, Samet),
+		Same = [S1|Samet]
+	    ;	gv_graphs_changed(T1, T2, Changedt, OI1, OI2, Same),
+		Changed = [S1-(O1,O2)|Changedt]
+	    )
+	).
+
 %%	gv_branch_head(+Branch, -Commit) is det.
 %
 %	Commit is unified with the tip of branch Branch.
@@ -106,6 +162,7 @@ gv_branch_head(Branch, Commit) :-
 	rdf_global_id(localgit:Ref, Branch),
 	directory_file_path(Dir, '.git', DotDir),
 	directory_file_path(DotDir, Ref, RefHead),
+	exists_file(RefHead),
 	read_file_to_codes(RefHead, Codes, []),
 	atom_codes(Atom, Codes),  % hash with newline
 	sub_atom(Atom, 0, 40 ,1, Hash),
@@ -159,8 +216,9 @@ gv_move_head_(NewHead) :-
 %	* gv:parent to the previous commit
 %	* gv:tree to the tree representation of the current
 %	  version graphs
-%	* dc:creator to Committer
-%	* dc:date to the current time
+%	* gv:creator to Committer
+%	* gv:comment to Comment
+%	* gv:date to the current time
 %
 %	Todo: Fix MT issues, just a mutex is not sufficient.
 %	Needs true git-like branching model?
@@ -183,15 +241,15 @@ gv_resource_commit_(Graph, Committer, Comment, Commit) :-
 
 	(   Comment = ''
 	->  CommentPair = []
-	;   CommentPair = [ po(rdfs:comment, literal(Comment)) ]
+	;   CommentPair = [ po(gv:comment, literal(Comment)) ]
 	),
 	format_time(atom(TimeStamp), '%s %z', Now),
 
 	RDFObject = [ po(rdf:type, gv:'Commit'),
 			  po(gv:parent, HEAD),
 			  po(gv:tree, NewTree),
-			  po(dcterms:creator, Committer),
-			  po(dcterms:date, literal(TimeStamp))
+			  po(gv:creator, Committer),
+			  po(gv:date, literal(TimeStamp))
 			  | CommentPair
 			],
 	gv_hash_uri(TreeHash, NewTree),
@@ -378,7 +436,8 @@ gv_graph_triples(Graph, Triples) :-
 gv_graph_triples(Graph, Triples) :-
 	nonvar(Graph),
 	var(Triples),!,
-	findall(rdf(S,P,O), rdf(S,P,O,Graph), Triples).
+	findall(rdf(S,P,O), rdf(S,P,O,Graph), Triples0),
+	sort(Triples0, Triples).
 
 
 %%	my_hash_atom(+Codes, -Hash) is det.

@@ -1,0 +1,12 @@
+@prefix      void: <http://rdfs.org/ns/void#> .
+@prefix      vann: <http://purl.org/vocab/vann/> .
+@prefix       lib: <http://www.swi-prolog.org/rdf/library/> .
+@prefix       owl: <http://www.w3.org/2002/07/owl#> .
+@prefix   dcterms: <http://purl.org/dc/terms/> .
+
+
+<rdfgit>
+	a void:Dataset ;
+	dcterms:title "Schema for the rdfgit vocabulary"@en;
+	void:dataDump
+		<rdfgit.ttl> .
