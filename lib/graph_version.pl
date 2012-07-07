@@ -258,18 +258,20 @@ gv_resource_commit_(Graph, Committer, Comment, Commit) :-
 	gv_tree(HEAD, CurrentTree),
 	gv_add_blob_to_tree(CurrentTree, Graph, BlobUri, NewTree, Options),
 	get_time(Now),
+	format_time(atom(GitTimeStamp), '%s %z', Now),
+	format_time(atom(RDFTimeStamp), '%Y-%m-%dT%H:%M:%S%Oz', Now),
 
 	(   Comment = ''
 	->  CommentPair = []
 	;   CommentPair = [ po(gv:comment, literal(Comment)) ]
 	),
-	format_time(atom(TimeStamp), '%s %z', Now),
+
 
 	RDFObject = [ po(rdf:type, gv:'Commit'),
 			  po(gv:parent, HEAD),
 			  po(gv:tree, NewTree),
 			  po(gv:creator, Committer),
-			  po(gv:date, literal(TimeStamp))
+			  po(gv:date, literal(RDFTimeStamp))
 			  | CommentPair
 			],
 	gv_hash_uri(TreeHash, NewTree),
@@ -281,8 +283,8 @@ gv_resource_commit_(Graph, Committer, Comment, Commit) :-
 	format(atom(GitCommitContent),
 	       'tree ~w~n~wauthor ~w <~w> ~w~ncommitter ~w <~w> ~w~n~n~w',
 	       [TreeHash, ParentLine,
-		Committer, Email, TimeStamp,
-		Committer, Email, TimeStamp,
+		Committer, Email, GitTimeStamp,
+		Committer, Email, GitTimeStamp,
 		Comment]),
 	atom_length(GitCommitContent, Clen),
 	format(atom(GitObject), 'commit ~d\u0000~w', [Clen, GitCommitContent]),
