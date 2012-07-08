@@ -14,6 +14,7 @@
 	  ]).
 
 :- use_module(library(semweb/rdf_db)).
+:- use_module(library(semweb/rdf_turtle)).
 :- use_module(library(semweb/rdf_turtle_write)).
 :- use_module(library(semweb/rdf_label)).
 :- use_module(library(settings)).
@@ -109,7 +110,7 @@ gv_current_branch(Branch) :-
 	rdf_global_id(localgit:Ref, Branch).
 
 
-gv_commit_property(init, tree(init)).
+gv_commit_property(null, tree(null)).
 
 gv_commit_property(Commit, Prop) :-
 	Prop  =.. [Local, RDFValue],
@@ -135,7 +136,7 @@ gv_commit_property(Commit, RDFProp) :-
 	).
 
 
-gv_diff(init, Commit2, [], [], OnlyIn2, []) :-
+gv_diff(null, Commit2, [], [], OnlyIn2, []) :-
 	gv_commit_property(Commit2, tree(Tree2)),
 	gv_tree_triples(Tree2, Tree2Triples),
 	gv_graphs_changed([],Tree2Triples, C, OnlyInOne, OnlyIn2, Unchanged),
@@ -154,10 +155,10 @@ gv_diff(Commit1, Commit2, Changed, OnlyIn1, OnlyIn2, UnChanged) :-
 	gv_triples_changed(ChangedS, Changed).
 
 gv_triples_changed([], []).
-gv_triples_changed([Head|Tail], [S-(Diff1,Diff2)|TailResult]) :-
-	Head = S-(B1,B2),
-	gv_graph_triples(B1, Triples1),
-	gv_graph_triples(B2, Triples2),
+gv_triples_changed([Head|Tail], [Graph-(Diff1,Diff2)|TailResult]) :-
+	Head = Graph-(Blob1,Blob2),
+	gv_graph_triples(Blob1, Triples1),
+	gv_graph_triples(Blob2, Triples2),
 	ord_intersection(Triples1, Triples2, Intersect, Diff2),
 	ord_intersection(Triples2, Triples1, Intersect, Diff1),
 	gv_triples_changed(Tail, TailResult).
@@ -210,14 +211,14 @@ gv_branch_head(Branch, Commit) :-
 %%	gv_head(+Commit) is det.
 %
 %	Commit is the most recent commit on the current branch,
-%	or the value 'init' if there are no current branches yet.
+%	or the value 'null' if there are no current branches yet.
 
 gv_head(Commit) :-
 	gv_current_branch(B),
 	gv_branch_head(B,Commit),
 	!.
 
-gv_head(init).
+gv_head(null).
 
 %%	gv_move_head(+NewHead) is det.
 %
@@ -286,13 +287,14 @@ gv_resource_commit_(Graph, Committer, Comment, Commit) :-
 	;   CommentPair = [ po(gv:comment, literal(Comment)) ]
 	),
 
+	Email='no_email@example.com',
 
 	RDFObject = [ po(rdf:type, gv:'Commit'),
 		      po(gv:parent, HEAD),
 		      po(gv:tree, NewTree),
-		      po(gv:committer, Committer),
-		      po(gv:author, Committer),
+		      po(gv:committer_name, Committer),
 		      po(gv:commit_date, literal(RDFTimeStamp)),
+		      po(gv:author_name, Committer),
 		      po(gv:author_date, literal(RDFTimeStamp))
 		    | CommentPair
 		    ],
@@ -301,7 +303,6 @@ gv_resource_commit_(Graph, Committer, Comment, Commit) :-
 	->  format(atom(ParentLine), 'parent ~w~n', [ParentHash])
 	;   ParentLine = ''
 	),
-	Email='no_email@example.com',
 	format(atom(GitCommitContent),
 	       'tree ~w~n~wauthor ~w <~w> ~w~ncommitter ~w <~w> ~w~n~n~w~n',
 	       [TreeHash, ParentLine,
@@ -374,8 +375,8 @@ gv_add_blob_to_tree(Tree, Graph, Uri, NewTree, Options) :-
 	setting(gv_tree_store, StoreMode),
 	gv_tree_triples(Tree, Triples0),
 	rdf_equal(HashProp, gv:blob),
-	(   rdf(Graph, HashProp, OldBlob, Tree)
-	->  selectchk(rdf(Graph, HashProp, OldBlob), Triples0, Triples1)
+	(   selectchk(rdf(Graph, HashProp, _OldBlob), Triples0, Triples1)
+	->  true
 	;   Triples1 = Triples0
 	),
 	NewTriples0 =  [rdf(Graph, HashProp, Uri)|Triples1],
@@ -405,8 +406,9 @@ tree_triple_to_git(rdf(S,P,O), Atom) :-
 	format(atom(A), '100644 ~w\u0000', [Filename]),
 	atom_concat(A, HashCode, Atom).
 
-git_tree_pair_to_triple([hash(H),name(S)], rdf(S,P,O)) :-
+git_tree_pair_to_triple([hash(H),name(Senc)], rdf(Sdec,P,O)) :-
 	rdf_equal(P, gv:blob),
+	legal_filename(Sdec, Senc),
 	gv_hash_uri(H,O).
 
 
@@ -442,7 +444,8 @@ triple_in(RDF, S,P,O,_G) :-
 
 
 gv_hash_uri(Hash, URI) :-
-	ground(Hash),!,
+	ground(Hash), Hash \= null,
+	!,
 	atom_concat(x, Hash, Local),
 	rdf_global_id(hash:Local, URI).
 gv_hash_uri(Hash, URI) :-
@@ -450,7 +453,6 @@ gv_hash_uri(Hash, URI) :-
 	nonvar(URI),
 	rdf_global_id(hash:Local, URI),
 	atom_concat(x, Hash, Local).
-
 
 %%	gv_copy_graph(+Source, +Target) is det.
 %
@@ -480,7 +482,21 @@ gv_graph_triples(Graph, Triples) :-
 	findall(rdf(S,P,O), rdf(S,P,O,Graph), Triples0),
 	sort(Triples0, Triples).
 
-gv_tree_triples(init, []).
+gv_graph_triples(Blob, Triples) :-
+	setting(gv_blob_store, git_only),
+	setting(gv_git_dir, Dir),
+	gv_hash_uri(Hash, Blob),
+	catch(git(['cat-file', '-p', Hash],
+		  [directory(Dir), output(Codes)]),
+	      _,
+	      fail),
+	atom_codes(TurtleAtom, Codes),
+	atom_to_memory_file(TurtleAtom, MF),
+	open_memory_file(MF, read, Stream),
+	rdf_read_turtle(stream(Stream), Triples, []),
+	free_memory_file(MF).
+
+gv_tree_triples(null, []).
 gv_tree_triples(Tree, Triples) :-
 	rdf_graph(Tree),
 	gv_graph_triples(Tree, Triples).
@@ -521,12 +537,16 @@ hex_bytes([High,Low|T]) -->
 	hex_bytes(T).
 
 legal_filename(Url, Filename) :-
+	ground(Url),
 	atom_chars(Url, UrlCodes),
 	phrase(url_file(UrlCodes), FileCodes),
-	atom_chars(Filename, FileCodes).
+	atom_chars(Filename, FileCodes),!.
+legal_filename(Url, Filename) :-
+	ground(Filename),
+	atom_chars(Filename, FileCodes),
+	phrase(url_file(UrlCodes), FileCodes),
+	atom_chars(Url, UrlCodes),!.
 
-
-url_file([]) --> [].
 url_file(['/'|T]) -->
 	['%', '2', 'F'],
 	url_file(T).
@@ -536,11 +556,12 @@ url_file([':'|T]) -->
 url_file([H|T]) -->
 	[H],
 	url_file(T).
+url_file([]) --> [].
 
 commit(Commit) -->
 	tree_line(T),
 	parent(P),
-	author(A),
+	author(AName, AEmail, ADate),
 	committer(CName, CEmail, CDate),
 	comment(CM),!,
 	{
@@ -548,7 +569,10 @@ commit(Commit) -->
 	 Commit = [
 		   tree(T),
 		   parent(P),
-		   author(A),
+		   author([ author_name(AName),
+			    author_email(AEmail),
+			    author_date(ADate)
+			  ]),
 		   committer([committer_name(CName),
 			      committer_email(CEmail),
 			      committer_date(CDate)]),
@@ -565,19 +589,26 @@ parent(P) -->
 	[112, 97, 114, 101, 110, 116, 32],
 	hash(P),
 	[10].
-parent(nill) --> [].
+parent(null) --> [].
 
-author(A) -->
-	[97, 117, 116, 104, 111, 114, 32|ACodes],
+author(Name,Email,Stamp) -->
+	[97, 117, 116, 104, 111, 114, 32],
+	name(NameC),
+	[32, 60], author_email(EmailC), [62, 32],
+	author_date(DateC,_ZoneC),
+	[10],
 	{
-	 atom_codes(A, ACodes)
-	},
-	[10].
+	 atom_codes(Name, NameC),
+	 atom_codes(Email, EmailC),
+	 atom_codes(Date, DateC),
+	 atom_number(Date, Stamp)
+	}.
+
 
 committer(Name,Email,Stamp) -->
 	[99, 111, 109, 109, 105, 116, 116, 101, 114, 32],
 	name(NameC),
-	[60], author_email(EmailC), [62, 32],
+	[32, 60], author_email(EmailC), [62, 32],
 	author_date(DateC,_ZoneC),
 	[10],
 	{
