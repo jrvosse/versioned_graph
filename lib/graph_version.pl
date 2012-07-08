@@ -31,7 +31,7 @@
 	   'Where to store tree snapshots objects').
 :- setting(gv_commit_store, oneof([git_only, rdf_only, both]), rdf_only,
 	   'Where to store commit objects').
-:- setting(gv_refs_store, oneof([git_only, rdf_only, both]), rdf_only,
+:- setting(gv_refs_store, oneof([git_only, rdf_only, both]),   rdf_only,
 	   'Where to store HEAD, refs etc.').
 
 :- listen(settings(changed(graph_version:_Setting, _Old, _New)),
@@ -42,10 +42,11 @@
 %       Initialise the RDF and/or GIT version repositories.
 gv_init :-
 	setting(gv_git_dir, Dir),
-	setting(gv_blob_store, BS),
-	setting(gv_tree_store, TS),
+	setting(gv_blob_store,   BS),
+	setting(gv_tree_store,   TS),
 	setting(gv_commit_store, CS),
-	sort([BS,TS,CS], StorageOpts),
+	setting(gv_refs_store,   RS),
+	sort([BS,TS,CS,RS], StorageOpts),
 	(   (StorageOpts == [git_only] ; rdf_graph('HEAD'))
 	->  true % no need to init RDF storage
 	;   gv_init(rdf)
@@ -108,17 +109,35 @@ gv_current_branch(Branch) :-
 	rdf_global_id(localgit:Ref, Branch).
 
 
+gv_commit_property(init, tree(init)).
+
 gv_commit_property(Commit, Prop) :-
-	Prop =.. [Local, Value],
+	Prop  =.. [Local, RDFValue],
 	rdf_global_id(gv:Local, RdfProp),
-	(   rdf(Commit, RdfProp, Value0, Commit)
-	->  literal_text(Value0, Value)
-	;   Value=could_be_stored_in_git_not_implemented
+	rdf(Commit, RdfProp, Value0, Commit),
+	literal_text(Value0, RDFValue).
+
+gv_commit_property(Commit, RDFProp) :-
+	RDFProp	=.. [RDFPred, RDFValue],
+	setting(gv_git_dir, Dir),
+	gv_hash_uri(Hash, Commit),
+	catch(git(['cat-file', '-p', Hash],[directory(Dir), output(Codes)]),_,fail),
+	phrase(commit(CommitObject), Codes),
+	(   memberchk(RDFPred, [parent, tree])
+	->  GitProp =.. [RDFPred, GitValue],
+	    option(GitProp, CommitObject),
+	    gv_hash_uri(GitValue, RDFValue)
+	;   RDFPred = comment
+	->  option(RDFProp, CommitObject)
+	;   memberchk(RDFPred, [committer_name, committer_date, committer_email])
+	->  option(committer(C), CommitObject),
+	    option(RDFProp, C)
 	).
+
 
 gv_diff(init, Commit2, [], [], OnlyIn2, []) :-
 	gv_commit_property(Commit2, tree(Tree2)),
-	gv_graph_triples(Tree2, Tree2Triples),
+	gv_tree_triples(Tree2, Tree2Triples),
 	gv_graphs_changed([],Tree2Triples, C, OnlyInOne, OnlyIn2, Unchanged),
 	C= [],
 	OnlyInOne = [],
@@ -128,8 +147,8 @@ gv_diff(init, Commit2, [], [], OnlyIn2, []) :-
 gv_diff(Commit1, Commit2, Changed, OnlyIn1, OnlyIn2, UnChanged) :-
 	gv_commit_property(Commit1, tree(Tree1)),
 	gv_commit_property(Commit2, tree(Tree2)),
-	gv_graph_triples(Tree1, Tree1Triples),
-	gv_graph_triples(Tree2, Tree2Triples),
+	gv_tree_triples(Tree1, Tree1Triples),
+	gv_tree_triples(Tree2, Tree2Triples),
 	gv_graphs_changed(Tree1Triples, Tree2Triples,
 			   ChangedS, OnlyIn1, OnlyIn2, UnChanged),
 	gv_triples_changed(ChangedS, Changed).
@@ -236,7 +255,8 @@ gv_move_head_(NewHead) :-
 %	* gv:parent to the previous commit
 %	* gv:tree to the tree representation of the current
 %	  version graphs
-%	* gv:creator to Committer
+%	* gv:committer to Committer
+%	* gv:author to Committer
 %	* gv:comment to Comment
 %	* gv:date to the current time
 %
@@ -255,11 +275,11 @@ gv_resource_commit_(Graph, Committer, Comment, Commit) :-
 	gv_store_graph(Graph, BlobUri, Options),
 
 	gv_head(HEAD),
-	gv_tree(HEAD, CurrentTree),
+	gv_commit_property(HEAD, tree(CurrentTree)),
 	gv_add_blob_to_tree(CurrentTree, Graph, BlobUri, NewTree, Options),
 	get_time(Now),
-	format_time(atom(GitTimeStamp), '%s %z', Now),
-	format_time(atom(RDFTimeStamp), '%Y-%m-%dT%H:%M:%S%Oz', Now),
+	format_time(atom(GitTimeStamp), '%s %z',    Now), % Git format
+	format_time(atom(RDFTimeStamp), '%FT%T%:z', Now), % xsd:dateTime
 
 	(   Comment = ''
 	->  CommentPair = []
@@ -268,12 +288,14 @@ gv_resource_commit_(Graph, Committer, Comment, Commit) :-
 
 
 	RDFObject = [ po(rdf:type, gv:'Commit'),
-			  po(gv:parent, HEAD),
-			  po(gv:tree, NewTree),
-			  po(gv:creator, Committer),
-			  po(gv:date, literal(RDFTimeStamp))
-			  | CommentPair
-			],
+		      po(gv:parent, HEAD),
+		      po(gv:tree, NewTree),
+		      po(gv:committer, Committer),
+		      po(gv:author, Committer),
+		      po(gv:commit_date, literal(RDFTimeStamp)),
+		      po(gv:author_date, literal(RDFTimeStamp))
+		    | CommentPair
+		    ],
 	gv_hash_uri(TreeHash, NewTree),
 	(   gv_hash_uri(ParentHash, HEAD)
 	->  format(atom(ParentLine), 'parent ~w~n', [ParentHash])
@@ -281,7 +303,7 @@ gv_resource_commit_(Graph, Committer, Comment, Commit) :-
 	),
 	Email='no_email@example.com',
 	format(atom(GitCommitContent),
-	       'tree ~w~n~wauthor ~w <~w> ~w~ncommitter ~w <~w> ~w~n~n~w',
+	       'tree ~w~n~wauthor ~w <~w> ~w~ncommitter ~w <~w> ~w~n~n~w~n',
 	       [TreeHash, ParentLine,
 		Committer, Email, GitTimeStamp,
 		Committer, Email, GitTimeStamp,
@@ -318,14 +340,6 @@ gv_store_git_object(Hash, Object, Options) :-
 	write(Zout, Object),
 	close(Zout).
 
-%%	gv_tree(+Commit, -Tree) is semidet.
-%%	gv_tree(-Commit, +Tree) is semidet.
-%%	gv_tree(-Commit, -Tree) is nondet.
-%
-gv_tree(Commit, Tree) :-
-	rdf(Commit, gv:tree, Tree), !.
-gv_tree(init, init).
-
 %%	gv_store_graph(+Graph, -Blob, +Options) is det.
 %
 %	Snapshot of Graph is stored in Blob.
@@ -358,7 +372,7 @@ gv_store_graph(Graph, Uri, Options) :-
 %
 gv_add_blob_to_tree(Tree, Graph, Uri, NewTree, Options) :-
 	setting(gv_tree_store, StoreMode),
-	gv_graph_triples(Tree, Triples0),
+	gv_tree_triples(Tree, Triples0),
 	rdf_equal(HashProp, gv:blob),
 	(   rdf(Graph, HashProp, OldBlob, Tree)
 	->  selectchk(rdf(Graph, HashProp, OldBlob), Triples0, Triples1)
@@ -390,6 +404,10 @@ tree_triple_to_git(rdf(S,P,O), Atom) :-
 	atom_codes(HashCode,Codes),
 	format(atom(A), '100644 ~w\u0000', [Filename]),
 	atom_concat(A, HashCode, Atom).
+
+git_tree_pair_to_triple([hash(H),name(S)], rdf(S,P,O)) :-
+	rdf_equal(P, gv:blob),
+	gv_hash_uri(H,O).
 
 
 %%	gv_compute_hash(+Triples, ?Hash) is det.
@@ -457,9 +475,25 @@ gv_graph_triples(Graph, Triples) :-
 
 gv_graph_triples(Graph, Triples) :-
 	nonvar(Graph),
+	rdf_graph(Graph),
 	var(Triples),!,
 	findall(rdf(S,P,O), rdf(S,P,O,Graph), Triples0),
 	sort(Triples0, Triples).
+
+gv_tree_triples(init, []).
+gv_tree_triples(Tree, Triples) :-
+	rdf_graph(Tree),
+	gv_graph_triples(Tree, Triples).
+
+gv_tree_triples(Tree, Triples) :-
+	setting(gv_git_dir, Dir),
+	gv_hash_uri(Hash, Tree),
+	catch(git(['cat-file', '-p', Hash],
+		  [directory(Dir), output(Codes)]),
+	      _,
+	      fail),
+	phrase(tree(TreeObject), Codes),
+	maplist(git_tree_pair_to_triple, TreeObject, Triples).
 
 
 %%	my_hash_atom(+Codes, -Hash) is det.
@@ -502,3 +536,137 @@ url_file([':'|T]) -->
 url_file([H|T]) -->
 	[H],
 	url_file(T).
+
+commit(Commit) -->
+	tree_line(T),
+	parent(P),
+	author(A),
+	committer(CName, CEmail, CDate),
+	comment(CM),!,
+	{
+
+	 Commit = [
+		   tree(T),
+		   parent(P),
+		   author(A),
+		   committer([committer_name(CName),
+			      committer_email(CEmail),
+			      committer_date(CDate)]),
+		   comment(CM)
+		  ]
+	}.
+
+tree_line(T) -->
+	[116, 114, 101, 101, 32],
+	hash(T),
+	[10].
+
+parent(P) -->
+	[112, 97, 114, 101, 110, 116, 32],
+	hash(P),
+	[10].
+parent(nill) --> [].
+
+author(A) -->
+	[97, 117, 116, 104, 111, 114, 32|ACodes],
+	{
+	 atom_codes(A, ACodes)
+	},
+	[10].
+
+committer(Name,Email,Stamp) -->
+	[99, 111, 109, 109, 105, 116, 116, 101, 114, 32],
+	name(NameC),
+	[60], author_email(EmailC), [62, 32],
+	author_date(DateC,_ZoneC),
+	[10],
+	{
+	 atom_codes(Name, NameC),
+	 atom_codes(Email, EmailC),
+	 atom_codes(Date, DateC),
+	 atom_number(Date, Stamp)
+	}.
+
+
+name([N|T]) -->
+	name_char(N),
+	name(T).
+name([]) --> [].
+
+author_email([N|T]) -->
+	email_char(N),
+	author_email(T).
+author_email([]) --> [].
+
+author_date(S,Z) -->
+	xdigits(S),
+	[32,43],
+	xdigits(Z).
+
+name_char(N) -->
+	[N],
+	{
+	 N \= 60,
+	 N \= 10
+	}.
+email_char(N) -->
+	[N],
+	{
+	 N \= 62
+	}.
+
+comment(C) -->
+	[10|Codes],
+	{
+	 atom_codes(C, Codes)
+	},
+	[10],
+	end_of_lines.
+comment('') --> [].
+
+end_of_lines -->
+	[10], end_of_lines.
+end_of_lines -->
+	[].
+
+hash(H) -->
+	xdigits(D),
+	{ atom_codes(H,D) }.
+
+xdigits([D|T]) -->
+        xdigit(D), !,
+        xdigits(T).
+xdigits([]) -->
+        [].
+
+xdigit(E) -->
+        [E],
+        { code_type(E, xdigit(_))
+        }.
+
+
+
+
+
+tree([H|T]) -->
+	blobline(H),
+	tree(T).
+tree([]) --> [].
+
+blobline(Blob) -->
+	mode,
+	myblob,
+	hash(Hash),
+	[09],
+	name(NameCodes),
+	[10],
+	{ atom_codes(Name, NameCodes),
+	  Blob = [hash(Hash),
+		  name(Name)] }.
+
+mode --> % 100644 space
+	[49, 48, 48,54,52,52,32].
+
+myblob -->
+	[98, 108, 111, 98, 32].
+
