@@ -602,7 +602,7 @@ parent(P) -->
 	[10].
 parent(null) --> [].
 
-author(Name,Email,Stamp) -->
+author(Name,Email,Date) -->
 	[97, 117, 116, 104, 111, 114, 32],
 	name(NameC),
 	[32, 60], author_email(EmailC), [62, 32],
@@ -611,12 +611,11 @@ author(Name,Email,Stamp) -->
 	{
 	 atom_codes(Name, NameC),
 	 atom_codes(Email, EmailC),
-	 atom_codes(Date, DateC),
-	 atom_number(Date, Stamp)
+	 atom_codes(Date, DateC)
 	}.
 
 
-committer(Name,Email,Stamp) -->
+committer(Name,Email,Date) -->
 	[99, 111, 109, 109, 105, 116, 116, 101, 114, 32],
 	name(NameC),
 	[32, 60], author_email(EmailC), [62, 32],
@@ -625,8 +624,7 @@ committer(Name,Email,Stamp) -->
 	{
 	 atom_codes(Name, NameC),
 	 atom_codes(Email, EmailC),
-	 atom_codes(Date, DateC),
-	 atom_number(Date, Stamp)
+	 atom_codes(Date, DateC)
 	}.
 
 
