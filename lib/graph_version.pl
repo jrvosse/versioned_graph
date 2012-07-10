@@ -520,15 +520,15 @@ gv_tree_triples(Tree, Triples) :-
 %
 
 legal_filename(Url, Filename) :-
-	ground(Url),
+	ground(Url),!,
 	atom_chars(Url, UrlCodes),
 	phrase(url_file(UrlCodes), FileCodes),
-	atom_chars(Filename, FileCodes),!.
+	atom_chars(Filename, FileCodes).
 legal_filename(Url, Filename) :-
-	ground(Filename),
+	ground(Filename),!,
 	atom_chars(Filename, FileCodes),
 	phrase(url_file(UrlCodes), FileCodes),
-	atom_chars(Url, UrlCodes),!.
+	atom_chars(Url, UrlCodes).
 
 
 
@@ -548,7 +548,6 @@ my_hash_atom(Codes, Hash) :-
 	atom_chars(Hash, Chars),
 	phrase(hex_bytes(Chars), Codes).
 
-hex_bytes([]) --> [].
 hex_bytes([High,Low|T]) -->
 	{ char_type(High, xdigit(H)),
 	  char_type(Low,  xdigit(L)),
@@ -556,16 +555,17 @@ hex_bytes([High,Low|T]) -->
 	},
 	[Code],
 	hex_bytes(T).
+hex_bytes([]) --> [].
 
 
 url_file(['/'|T]) -->
-	['%', '2', 'F'],
+	['%', '2', 'F'],!,
 	url_file(T).
 url_file([':'|T]) -->
-	['%', '2', 'A'],
+	['%', '2', 'A'],!,
 	url_file(T).
 url_file([H|T]) -->
-	[H],
+	[H],!,
 	url_file(T).
 url_file([]) --> [].
 
