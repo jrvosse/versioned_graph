@@ -496,6 +496,18 @@ gv_tree_triples(Tree, Triples) :-
 	maplist(git_tree_pair_to_triple, TreeObject, Triples).
 
 
+%%	legal_filename(?URL, ?Filename) is det.
+%
+%	Minimal %-encoding to turn URL into a legal filename
+%	and vice versa.  Currently only slashes '/' and colons ':'
+%	are (percent) encoded.
+%
+legal_filename(Url, Filename) :-
+	atom_chars(Url, UrlCodes),
+	phrase(url_file(UrlCodes), FileCodes),
+	atom_chars(Filename, FileCodes).
+
+
 %%	my_hash_atom(+Codes, -Hash) is det.
 %       my_hash_atom(-Codes, +Hash) is det.
 %
@@ -519,12 +531,6 @@ hex_bytes([High,Low|T]) -->
 	},
 	[Code],
 	hex_bytes(T).
-
-legal_filename(Url, Filename) :-
-	atom_chars(Url, UrlCodes),
-	phrase(url_file(UrlCodes), FileCodes),
-	atom_chars(Filename, FileCodes).
-
 
 url_file([]) --> [].
 url_file(['/'|T]) -->
