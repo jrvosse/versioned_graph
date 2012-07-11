@@ -482,7 +482,7 @@ gv_graph_triples(Graph, Triples) :-
 
 gv_graph_triples(Graph, Triples) :-
 	nonvar(Graph),
-	rdf_graph(Graph),
+	\+ setting(gv_blob_store, git_only),
 	var(Triples),!,
 	findall(rdf(S,P,O), rdf(S,P,O,Graph), Triples0),
 	sort(Triples0, Triples).
