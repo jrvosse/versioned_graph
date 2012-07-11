@@ -576,7 +576,6 @@ commit(Commit) -->
 	committer(CName, CEmail, CDate),
 	comment(CM),!,
 	{
-
 	 Commit = [
 		   tree(T),
 		   parent(P),
@@ -656,13 +655,21 @@ email_char(N) -->
 	}.
 
 comment(C) -->
-	[10|Codes],
+	comment_chars(Codes),
 	{
-	 atom_codes(C, Codes)
-	},
-	[10],
-	end_of_lines.
-comment('') --> [].
+	 atom_codes(Atom, Codes),
+	 sub_atom(Atom, 0, _, 1, C) % strip of last \n
+	}.
+comment_chars([C|T]) -->
+	comment_char(C), !,
+	comment_chars(T).
+comment_chars([]) --> [].
+
+comment_char(C) -->
+	[C],
+	{
+	 C \= eos
+	}.
 
 end_of_lines -->
 	[10], end_of_lines.
