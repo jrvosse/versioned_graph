@@ -135,15 +135,14 @@ gv_commit_property(Commit, RDFProp) :-
 	    option(RDFProp, C)
 	).
 
+gv_diff(Commit1, null, Changed, OnlyIn1, OnlyIn2, Same) :-
+	gv_diff(null, Commit1, Changed, OnlyIn2, OnlyIn1, Same).
 
 gv_diff(null, Commit2, [], [], OnlyIn2, []) :-
 	gv_commit_property(Commit2, tree(Tree2)),
 	gv_tree_triples(Tree2, Tree2Triples),
-	gv_graphs_changed([],Tree2Triples, C, OnlyInOne, OnlyIn2, Unchanged),
-	C= [],
-	OnlyInOne = [],
-	Unchanged = [],
-	true.
+	gv_graphs_changed([],Tree2Triples, [], [], OnlyIn2S, []),
+	gv_triples_changed(OnlyIn2S, OnlyIn2).
 
 gv_diff(Commit1, Commit2, Changed, OnlyIn1, OnlyIn2, UnChanged) :-
 	gv_commit_property(Commit1, tree(Tree1)),
@@ -151,24 +150,30 @@ gv_diff(Commit1, Commit2, Changed, OnlyIn1, OnlyIn2, UnChanged) :-
 	gv_tree_triples(Tree1, Tree1Triples),
 	gv_tree_triples(Tree2, Tree2Triples),
 	gv_graphs_changed(Tree1Triples, Tree2Triples,
-			   ChangedS, OnlyIn1, OnlyIn2, UnChanged),
+			   ChangedS, OnlyIn1S, OnlyIn2S, UnChanged),
+	gv_triples_changed(OnlyIn1S, OnlyIn1),
+	gv_triples_changed(OnlyIn2S, OnlyIn2),
 	gv_triples_changed(ChangedS, Changed).
 
 gv_triples_changed([], []).
 gv_triples_changed([Head|Tail], [Graph-(Diff1,Diff2)|TailResult]) :-
-	Head = Graph-(Blob1,Blob2),
+	Head = Graph-(Blob1,Blob2),!,
 	gv_graph_triples(Blob1, Triples1),
 	gv_graph_triples(Blob2, Triples2),
 	ord_intersection(Triples1, Triples2, Intersect, Diff2),
 	ord_intersection(Triples2, Triples1, Intersect, Diff1),
 	gv_triples_changed(Tail, TailResult).
+gv_triples_changed([Head|Tail], [Graph-Triples|TailResult]) :-
+	Head = Graph-Blob,!,
+	gv_graph_triples(Blob, Triples),
+	gv_triples_changed(Tail, TailResult).
 
 gv_graphs_changed([], [], [], [], [], []).
-gv_graphs_changed([rdf(S1,_,_)|T], [],
-		   Changed, [S1|OI1], OI2, Same) :-
+gv_graphs_changed([rdf(S1,_,O1)|T], [],
+		   Changed, [S1-O1|OI1], OI2, Same) :-
 	gv_graphs_changed(T, [], Changed, OI1, OI2, Same).
-gv_graphs_changed([], [rdf(S2,_,_)|T],
-		   Changed, OI1, [S2|OI2], Same) :-
+gv_graphs_changed([], [rdf(S2,_,O2)|T],
+		   Changed, OI1, [S2-O2|OI2], Same) :-
 	gv_graphs_changed(T, [], Changed, OI1, OI2, Same).
 gv_graphs_changed([rdf(S1,P1,O1)|T1], [rdf(S2,P2,O2)|T2],
 		   Changed, OI1, OI2, Same)  :-
@@ -176,11 +181,11 @@ gv_graphs_changed([rdf(S1,P1,O1)|T1], [rdf(S2,P2,O2)|T2],
 	(   C == '<'
 	->  gv_graphs_changed(T1, [rdf(S2,P2,O2)|T2],
 			       Changed, OI1t, OI2, Same),
-	    OI1 = [S1|OI1t]
+	    OI1 = [S1-O1|OI1t]
 	;   C == '>'
 	->  gv_graphs_changed([rdf(S1,P1,O1)|T1], T2,
 			       Changed, OI1, OI2t, Same),
-	    OI2 = [S2|OI2t]
+	    OI2 = [S2-O2|OI2t]
 	;   (	O1 == O2
 	    ->	gv_graphs_changed(T1, T2, Changed, OI1, OI2, Samet),
 		Same = [S1|Samet]
@@ -655,6 +660,7 @@ email_char(N) -->
 	}.
 
 comment(C) -->
+	[10],
 	comment_chars(Codes),
 	{
 	 atom_codes(Atom, Codes),
