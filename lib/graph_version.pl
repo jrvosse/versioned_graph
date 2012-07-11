@@ -285,9 +285,8 @@ gv_resource_commit_(Graph, Committer, Comment, Commit) :-
 	gv_commit_property(HEAD, tree(CurrentTree)),
 	gv_add_blob_to_tree(CurrentTree, Graph, BlobUri, NewTree, Options),
 	get_time(Now),
-	format_time(atom(GitTimeStamp), '%s %z',    Now), % Git format
-	format_time(atom(RDFTimeStamp), '%FT%T%:z', Now), % xsd:dateTime
-
+	format_time(atom(GitTimeStamp), '%s %z', Now), % Git format
+	format_time(atom(RDFTimeStamp), '%s',    Now), % Hack format ...
 	(   Comment = ''
 	->  CommentPair = []
 	;   CommentPair = [ po(gv:comment, literal(Comment)) ]
