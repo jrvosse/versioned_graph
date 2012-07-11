@@ -261,10 +261,11 @@ gv_move_head_(NewHead) :-
 %	* gv:parent to the previous commit
 %	* gv:tree to the tree representation of the current
 %	  version graphs
-%	* gv:committer to Committer
-%	* gv:author to Committer
+%	* gv:committer_name to Committer
+%	* gv:author_name to Committer
 %	* gv:comment to Comment
-%	* gv:date to the current time
+%	* gv:commiter_date to the current time
+%	* gv:author_date to the current time
 %
 %	Todo: Fix MT issues, just a mutex is not sufficient.
 %	Needs true git-like branching model?
@@ -298,7 +299,7 @@ gv_resource_commit_(Graph, Committer, Comment, Commit) :-
 		      po(gv:parent, HEAD),
 		      po(gv:tree, NewTree),
 		      po(gv:committer_name, Committer),
-		      po(gv:commit_date, literal(RDFTimeStamp)),
+		      po(gv:committer_date, literal(RDFTimeStamp)),
 		      po(gv:author_name, Committer),
 		      po(gv:author_date, literal(RDFTimeStamp))
 		    | CommentPair
