@@ -406,14 +406,14 @@ tree_triple_to_git(rdf(S,P,O), Atom) :-
 	rdf_equal(P, gv:blob), % just checking ...
 	gv_hash_uri(Hash, O),
 	my_hash_atom(Codes, Hash),
-	legal_filename(S, Filename),
+	url_to_filename(S, Filename),
 	atom_codes(HashCode,Codes),
 	format(atom(A), '100644 ~w\u0000', [Filename]),
 	atom_concat(A, HashCode, Atom).
 
 git_tree_pair_to_triple([hash(H),name(Senc)], rdf(Sdec,P,O)) :-
 	rdf_equal(P, gv:blob),
-	legal_filename(Sdec, Senc),
+	url_to_filename(Sdec, Senc),
 	gv_hash_uri(H,O).
 
 
@@ -503,10 +503,13 @@ gv_graph_triples(Blob, Triples) :-
 
 gv_tree_triples(null, []).
 gv_tree_triples(Tree, Triples) :-
+	nonvar(Tree),
 	rdf_graph(Tree),
-	gv_graph_triples(Tree, Triples).
-
+	\+ setting(gv_tree_store, git_only),
+	findall(rdf(S,P,O), rdf(S,P,O,Tree), Triples0),
+	sort(Triples0, Triples).
 gv_tree_triples(Tree, Triples) :-
+	\+ setting(gv_tree_store, git_only),
 	setting(gv_git_dir, Dir),
 	gv_hash_uri(Hash, Tree),
 	catch(git(['cat-file', '-p', Hash],
@@ -517,24 +520,64 @@ gv_tree_triples(Tree, Triples) :-
 	maplist(git_tree_pair_to_triple, TreeObject, Triples).
 
 
-%%	legal_filename(?URL, ?Filename) is det.
+%%	url_to_filename(+URL, -FileName) is det.
+%%	url_to_filename(-URL, +FileName) is det.
 %
-%	Minimal %-encoding to turn URL into a legal filename
-%	and vice versa.  Currently only slashes '/' and colons ':'
-%	are (percent) encoded.
+%	Turn  a  valid  URL  into  a  filename.  Earlier  versions  used
+%	www_form_encode/2, but this can produce  characters that are not
+%	valid  in  filenames.  We  will  use    the   same  encoding  as
+%	www_form_encode/2,  but  using  our  own    rules   for  allowed
+%	characters. The only requirement is that   we avoid any filename
+%	special character in use.  The   current  encoding  use US-ASCII
+%	alnum characters, _ and %
 %
+%	Code copied from rdf_persistency:url_to_filename/2
+%	on July 16 2012.
 
-legal_filename(Url, Filename) :-
-	ground(Url),!,
-	atom_chars(Url, UrlCodes),
-	phrase(url_file(UrlCodes), FileCodes),
-	atom_chars(Filename, FileCodes).
-legal_filename(Url, Filename) :-
-	ground(Filename),!,
-	atom_chars(Filename, FileCodes),
-	phrase(url_file(UrlCodes), FileCodes),
-	atom_chars(Url, UrlCodes).
+url_to_filename(URL, FileName) :-
+	atomic(URL), !,
+	atom_codes(URL, Codes),
+	phrase(url_encode(EncCodes), Codes),
+	atom_codes(FileName, EncCodes).
+url_to_filename(URL, FileName) :-
+	www_form_encode(URL, FileName).
 
+url_encode([0'+|T]) -->
+	" ", !,
+        url_encode(T).
+url_encode([C|T]) -->
+	alphanum(C), !,
+	url_encode(T).
+url_encode([C|T]) -->
+	no_enc_extra(C), !,
+	url_encode(T).
+url_encode(Enc) -->
+	(   "\r\n"
+	;   "\n"
+	), !,
+	{ append("%0D%0A", T, Enc)
+	},
+	url_encode(T).
+url_encode([]) -->
+	eos, !.
+url_encode([0'%,D1,D2|T]) -->
+	[C],
+	{ Dv1 is (C>>4 /\ 0xf),
+	  Dv2 is (C /\ 0xf),
+	  code_type(D1, xdigit(Dv1)),
+	  code_type(D2, xdigit(Dv2))
+	},
+	url_encode(T).
+
+eos([], []).
+
+alphanum(C) -->
+	[C],
+	{ C < 128,			% US-ASCII
+	  code_type(C, alnum)
+	}.
+
+no_enc_extra(0'_) --> "_".
 
 
 
@@ -561,18 +604,6 @@ hex_bytes([High,Low|T]) -->
 	[Code],
 	hex_bytes(T).
 hex_bytes([]) --> [].
-
-
-url_file(['/'|T]) -->
-	['%', '2', 'F'],!,
-	url_file(T).
-url_file([':'|T]) -->
-	['%', '2', 'A'],!,
-	url_file(T).
-url_file([H|T]) -->
-	[H],!,
-	url_file(T).
-url_file([]) --> [].
 
 commit(Commit) -->
 	tree_line(T),
