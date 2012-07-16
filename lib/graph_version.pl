@@ -6,7 +6,6 @@
 	   gv_resource_commit/4,
 	   gv_head/1,
 	   gv_hash_uri/2,
-	   gv_compute_hash/2,
 	   gv_copy_graph/2,
 	   gv_graph_triples/2,
 	   gv_commit_property/2,
@@ -19,6 +18,10 @@
 :- use_module(library(semweb/rdf_label)).
 :- use_module(library(settings)).
 :- use_module(library(git)).
+
+:- use_module(url_to_filename).
+:- use_module(hash_atom).
+:- use_module(parse_git_objects).
 
 :- rdf_register_ns(gv,       'http://semanticweb.cs.vu.nl/graph/version/').
 :- rdf_register_ns(hash,     'http://semanticweb.cs.vu.nl/graph/hash/').
@@ -37,6 +40,26 @@
 
 :- listen(settings(changed(graph_version:_Setting, _Old, _New)),
 	  gv_init).
+
+%%	gv_hash_uri(+Hash, -URI) is det.
+%
+%	URI is a uri constructed by concatenating the
+%	Hash with some additional prefix to make it a
+%	legal URI.
+%
+%	This provides a basic one to one mapping between git's SHA1 hash
+%	ids and the URIs used in RDF.
+
+gv_hash_uri(Hash, URI) :-
+	nonvar(Hash), Hash \= null,
+	!,
+	atom_concat(x, Hash, Local),
+	rdf_global_id(hash:Local, URI).
+
+gv_hash_uri(Hash, URI) :-
+	nonvar(URI),!,
+	rdf_global_id(hash:Local, URI),
+	atom_concat(x, Hash, Local).
 
 %%	git_init is det.
 %
@@ -97,18 +120,12 @@ gv_current_branch(Branch) :-
 	sub_atom(RefNL, 0, _, 1, Ref),
 	rdf_global_id(localgit:Ref, Branch).
 
-gv_current_branch(Branch) :-
-	\+ setting(gv_refs_store, rdf_only),
-	% as above, but without using git itself.
-	% Assume current branch is in git file HEAD:
-	setting(gv_git_dir, Dir),
-	directory_file_path(Dir, '.git', DotDir),
-	directory_file_path(DotDir, 'HEAD', HEAD),
-	read_file_to_codes(HEAD, Codes, []),
-	atom_codes(Atom, Codes),  %'ref: refs/heads/master\n'
-	sub_atom(Atom, 5,_,1, Ref),
-	rdf_global_id(localgit:Ref, Branch).
-
+%%	gv_commit_property(+Commit, -Prop) is det.
+%
+%	True if Prop unifies with a property of Commit.
+%	Prop is of the form property_name(property_value).
+%
+%
 
 gv_commit_property(null, tree(null)).
 
@@ -132,6 +149,9 @@ gv_commit_property(Commit, RDFProp) :-
 	->  option(RDFProp, CommitObject)
 	;   memberchk(RDFPred, [committer_name, committer_date, committer_email])
 	->  option(committer(C), CommitObject),
+	    option(RDFProp, C)
+	;   memberchk(RDFPred, [author_name, author_date, author_email])
+	->  option(author(C), CommitObject),
 	    option(RDFProp, C)
 	).
 
@@ -259,16 +279,17 @@ gv_move_head_(NewHead) :-
 %	The action is commited by creating a Commit object, this object
 %	links with:
 %	* gv:parent to the previous commit
-%	* gv:tree to the tree representation of the current
-%	  version graphs
+%	* gv:tree to the tree representation of the current set of
+%	  versioned graphs
 %	* gv:committer_name to Committer
-%	* gv:author_name to Committer
-%	* gv:comment to Comment
 %	* gv:commiter_date to the current time
+%	* gv:author_name to Committer
 %	* gv:author_date to the current time
+%	* gv:comment to Comment
 %
 %	Todo: Fix MT issues, just a mutex is not sufficient.
 %	Needs true git-like branching model?
+%	Fix email handling.
 
 gv_resource_commit(Graph, Committer, Comment, Commit) :-
 	with_mutex(gv_commit_mutex,
@@ -405,7 +426,7 @@ gv_add_blob_to_tree(Tree, Graph, Uri, NewTree, Options) :-
 tree_triple_to_git(rdf(S,P,O), Atom) :-
 	rdf_equal(P, gv:blob), % just checking ...
 	gv_hash_uri(Hash, O),
-	my_hash_atom(Codes, Hash),
+	gv_hash_atom(Codes, Hash),
 	url_to_filename(S, Filename),
 	atom_codes(HashCode,Codes),
 	format(atom(A), '100644 ~w\u0000', [Filename]),
@@ -417,47 +438,8 @@ git_tree_pair_to_triple([hash(H),name(Senc)], rdf(Sdec,P,O)) :-
 	gv_hash_uri(H,O).
 
 
-%%	gv_compute_hash(+Triples, ?Hash) is det.
-%
-%	True of Hash is a SHA1 hash of the list of Triples.
-%	Hash is computed using the same recipee git uses.
-%	So, if one would run "git hash-object" on the
-%       file containing the canonical turtle serialisation of
-%       Triples, git would generate the same hash.
 
 
-gv_compute_hash(Triples, Hash) :-
-	with_output_to(
-	    atom(Content),
-	    rdf_save_canonical_turtle(
-		stream(current_output),
-		[ expand(triple_in(Triples)),
-		  encoding(wchar_t)])),
-	write_length(Content, Clen, []),
-	format(atom(Out), 'blob ~d\u0000~w', [Clen, Content]),
-	sha_hash(Out, Sha, []),
-	hash_atom(Sha, Hash).
-
-triple_in(RDF, S,P,O,_G) :-
-	member(rdf(S,P,O), RDF).
-
-%%	gv_hash_uri(+Hash, -URI) is det.
-%
-%	URI is a uri constructed by concatenating the
-%	Hash with some additional prefix to make it a
-%	legal URI.
-
-
-gv_hash_uri(Hash, URI) :-
-	ground(Hash), Hash \= null,
-	!,
-	atom_concat(x, Hash, Local),
-	rdf_global_id(hash:Local, URI).
-gv_hash_uri(Hash, URI) :-
-	var(Hash),
-	nonvar(URI),
-	rdf_global_id(hash:Local, URI),
-	atom_concat(x, Hash, Local).
 
 %%	gv_copy_graph(+Source, +Target) is det.
 %
@@ -518,239 +500,3 @@ gv_tree_triples(Tree, Triples) :-
 	      fail),
 	phrase(tree(TreeObject), Codes),
 	maplist(git_tree_pair_to_triple, TreeObject, Triples).
-
-
-%%	url_to_filename(+URL, -FileName) is det.
-%%	url_to_filename(-URL, +FileName) is det.
-%
-%	Turn  a  valid  URL  into  a  filename.  Earlier  versions  used
-%	www_form_encode/2, but this can produce  characters that are not
-%	valid  in  filenames.  We  will  use    the   same  encoding  as
-%	www_form_encode/2,  but  using  our  own    rules   for  allowed
-%	characters. The only requirement is that   we avoid any filename
-%	special character in use.  The   current  encoding  use US-ASCII
-%	alnum characters, _ and %
-%
-%	Code copied from rdf_persistency:url_to_filename/2
-%	on July 16 2012.
-
-url_to_filename(URL, FileName) :-
-	atomic(URL), !,
-	atom_codes(URL, Codes),
-	phrase(url_encode(EncCodes), Codes),
-	atom_codes(FileName, EncCodes).
-url_to_filename(URL, FileName) :-
-	www_form_encode(URL, FileName).
-
-url_encode([0'+|T]) -->
-	" ", !,
-        url_encode(T).
-url_encode([C|T]) -->
-	alphanum(C), !,
-	url_encode(T).
-url_encode([C|T]) -->
-	no_enc_extra(C), !,
-	url_encode(T).
-url_encode(Enc) -->
-	(   "\r\n"
-	;   "\n"
-	), !,
-	{ append("%0D%0A", T, Enc)
-	},
-	url_encode(T).
-url_encode([]) -->
-	eos, !.
-url_encode([0'%,D1,D2|T]) -->
-	[C],
-	{ Dv1 is (C>>4 /\ 0xf),
-	  Dv2 is (C /\ 0xf),
-	  code_type(D1, xdigit(Dv1)),
-	  code_type(D2, xdigit(Dv2))
-	},
-	url_encode(T).
-
-eos([], []).
-
-alphanum(C) -->
-	[C],
-	{ C < 128,			% US-ASCII
-	  code_type(C, alnum)
-	}.
-
-no_enc_extra(0'_) --> "_".
-
-
-
-%%	my_hash_atom(+Codes, -Hash) is det.
-%       my_hash_atom(-Codes, +Hash) is det.
-%
-%       Bi-directional version of hash_atom/2 ...
-%
-my_hash_atom(Codes, Hash) :-
-	nonvar(Codes),
-	!,
-	hash_atom(Codes, Hash).
-
-my_hash_atom(Codes, Hash) :-
-	nonvar(Hash),
-	atom_chars(Hash, Chars),
-	phrase(hex_bytes(Chars), Codes).
-
-hex_bytes([High,Low|T]) -->
-	{ char_type(High, xdigit(H)),
-	  char_type(Low,  xdigit(L)),
-	  Code is 16*H + L
-	},
-	[Code],
-	hex_bytes(T).
-hex_bytes([]) --> [].
-
-commit(Commit) -->
-	tree_line(T),
-	parent(P),
-	author(AName, AEmail, ADate),
-	committer(CName, CEmail, CDate),
-	comment(CM),!,
-	{
-	 Commit = [
-		   tree(T),
-		   parent(P),
-		   author([ author_name(AName),
-			    author_email(AEmail),
-			    author_date(ADate)
-			  ]),
-		   committer([committer_name(CName),
-			      committer_email(CEmail),
-			      committer_date(CDate)]),
-		   comment(CM)
-		  ]
-	}.
-
-tree_line(T) -->
-	[116, 114, 101, 101, 32],
-	hash(T),
-	[10].
-
-parent(P) -->
-	[112, 97, 114, 101, 110, 116, 32],
-	hash(P),
-	[10].
-parent(null) --> [].
-
-author(Name,Email,Date) -->
-	[97, 117, 116, 104, 111, 114, 32],
-	name(NameC),
-	[32, 60], author_email(EmailC), [62, 32],
-	author_date(DateC,_ZoneC),
-	[10],
-	{
-	 atom_codes(Name, NameC),
-	 atom_codes(Email, EmailC),
-	 atom_codes(Date, DateC)
-	}.
-
-
-committer(Name,Email,Date) -->
-	[99, 111, 109, 109, 105, 116, 116, 101, 114, 32],
-	name(NameC),
-	[32, 60], author_email(EmailC), [62, 32],
-	author_date(DateC,_ZoneC),
-	[10],
-	{
-	 atom_codes(Name, NameC),
-	 atom_codes(Email, EmailC),
-	 atom_codes(Date, DateC)
-	}.
-
-
-name([N|T]) -->
-	name_char(N),
-	name(T).
-name([]) --> [].
-
-author_email([N|T]) -->
-	email_char(N),
-	author_email(T).
-author_email([]) --> [].
-
-author_date(S,Z) -->
-	xdigits(S),
-	[32,43],
-	xdigits(Z).
-
-name_char(N) -->
-	[N],
-	{
-	 N \= 60,
-	 N \= 10
-	}.
-email_char(N) -->
-	[N],
-	{
-	 N \= 62
-	}.
-
-comment(C) -->
-	[10],
-	comment_chars(Codes),
-	{
-	 atom_codes(Atom, Codes),
-	 sub_atom(Atom, 0, _, 1, C) % strip of last \n
-	}.
-comment_chars([C|T]) -->
-	comment_char(C), !,
-	comment_chars(T).
-comment_chars([]) --> [].
-
-comment_char(C) -->
-	[C],
-	{
-	 C \= eos
-	}.
-
-end_of_lines -->
-	[10], end_of_lines.
-end_of_lines -->
-	[].
-
-hash(H) -->
-	xdigits(D),
-	{ atom_codes(H,D) }.
-
-xdigits([D|T]) -->
-        xdigit(D), !,
-        xdigits(T).
-xdigits([]) -->
-        [].
-
-xdigit(E) -->
-        [E],
-        { code_type(E, xdigit(_))
-        }.
-
-
-
-
-
-tree([H|T]) -->
-	blobline(H),
-	tree(T).
-tree([]) --> [].
-
-blobline(Blob) -->
-	mode,
-	myblob,
-	hash(Hash),
-	[09],
-	name(NameCodes),
-	[10],
-	{ atom_codes(Name, NameCodes),
-	  Blob = [hash(Hash),
-		  name(Name)] }.
-
-mode --> % 100644 space
-	[49, 48, 48,54,52,52,32].
-
-myblob -->
-	[98, 108, 111, 98, 32].
-
