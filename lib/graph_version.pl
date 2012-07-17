@@ -22,6 +22,7 @@
 :- use_module(url_to_filename).
 :- use_module(hash_atom).
 :- use_module(parse_git_objects).
+:- use_module(gv_git_io).
 
 :- rdf_register_ns(gv,       'http://semanticweb.cs.vu.nl/graph/version/').
 :- rdf_register_ns(hash,     'http://semanticweb.cs.vu.nl/graph/hash/').
@@ -41,26 +42,6 @@
 :- listen(settings(changed(graph_version:_Setting, _Old, _New)),
 	  gv_init).
 
-%%	gv_hash_uri(+Hash, -URI) is det.
-%
-%	URI is a uri constructed by concatenating the
-%	Hash with some additional prefix to make it a
-%	legal URI.
-%
-%	This provides a basic one to one mapping between git's SHA1 hash
-%	ids and the URIs used in RDF.
-
-gv_hash_uri(Hash, URI) :-
-	nonvar(Hash), Hash \= null,
-	!,
-	atom_concat(x, Hash, Local),
-	rdf_global_id(hash:Local, URI).
-
-gv_hash_uri(Hash, URI) :-
-	nonvar(URI),!,
-	rdf_global_id(hash:Local, URI),
-	atom_concat(x, Hash, Local).
-
 %%	git_init is det.
 %
 %       Initialise the RDF and/or GIT version repositories.
@@ -73,32 +54,18 @@ gv_init :-
 	sort([BS,TS,CS,RS], StorageOpts),
 	(   (StorageOpts == [git_only] ; rdf_graph('HEAD'))
 	->  true % no need to init RDF storage
-	;   gv_init(rdf)
+	;   gv_init_rdf
 	),
 
 	(   (StorageOpts == [rdf_only] ; exists_directory(Dir) )
 	->  true % no need to init git storage
-	;   gv_init(git)
+	;   gv_init_git
 	).
 
 
-gv_init(rdf) :-
+gv_init_rdf :-
 	rdf_assert(gv:default, gv:branch, localgit:'refs/heads/master', 'HEAD').
 
-
-gv_init(git) :-
-	setting(gv_git_dir, Dir),
-	directory_file_path(Dir, '.git', DotDir),
-	directory_file_path(DotDir, objects, ObjectsDir),
-	directory_file_path(DotDir, 'HEAD', HEAD),
-	directory_file_path(DotDir, refs, RefsDir),
-	directory_file_path(RefsDir, heads, RefsHeadsDir),
-	make_directory_path(DotDir),
-	make_directory_path(ObjectsDir),
-	make_directory_path(RefsHeadsDir),
-	open(HEAD, write, Out),
-	write(Out, 'ref: refs/heads/master\n'),
-	close(Out).
 
 :- gv_init.
 
@@ -114,46 +81,24 @@ gv_current_branch(Branch) :-
 gv_current_branch(Branch) :-
 	\+ setting(gv_refs_store, rdf_only),
 	% Assume current branch is the git symbolic ref HEAD:
-	setting(gv_git_dir, Dir),
-	git(['symbolic-ref', 'HEAD'],[directory(Dir), output(OutCodes)]),!,
-	atom_codes(RefNL, OutCodes),
-	sub_atom(RefNL, 0, _, 1, Ref),
-	rdf_global_id(localgit:Ref, Branch).
+	gv_current_branch_git(Branch).
 
 %%	gv_commit_property(+Commit, -Prop) is det.
 %
 %	True if Prop unifies with a property of Commit.
 %	Prop is of the form property_name(property_value).
-%
-%
 
-gv_commit_property(null, tree(null)).
+gv_commit_property(null, tree(null)) :- !.
 
 gv_commit_property(Commit, Prop) :-
+	\+ setting(gv_refs_store, git_only),
 	Prop  =.. [Local, RDFValue],
 	rdf_global_id(gv:Local, RdfProp),
 	rdf(Commit, RdfProp, Value0, Commit),
 	literal_text(Value0, RDFValue).
-
-gv_commit_property(Commit, RDFProp) :-
-	RDFProp	=.. [RDFPred, RDFValue],
-	setting(gv_git_dir, Dir),
-	gv_hash_uri(Hash, Commit),
-	catch(git(['cat-file', '-p', Hash],[directory(Dir), output(Codes)]),_,fail),
-	phrase(commit(CommitObject), Codes),
-	(   memberchk(RDFPred, [parent, tree])
-	->  GitProp =.. [RDFPred, GitValue],
-	    option(GitProp, CommitObject),
-	    gv_hash_uri(GitValue, RDFValue)
-	;   RDFPred = comment
-	->  option(RDFProp, CommitObject)
-	;   memberchk(RDFPred, [committer_name, committer_date, committer_email])
-	->  option(committer(C), CommitObject),
-	    option(RDFProp, C)
-	;   memberchk(RDFPred, [author_name, author_date, author_email])
-	->  option(author(C), CommitObject),
-	    option(RDFProp, C)
-	).
+gv_commit_property(Commit, Prop) :-
+	setting(gv_refs_store, git_only),
+	gv_commit_property_git(Commit, Prop).
 
 gv_diff(Commit1, null, Changed, OnlyIn1, OnlyIn2, Same) :-
 	gv_diff(null, Commit1, Changed, OnlyIn2, OnlyIn1, Same).
@@ -222,16 +167,7 @@ gv_branch_head(Branch, Commit) :-
 
 gv_branch_head(Branch, Commit) :-
 	\+ setting(gv_refs_store, rdf_only),
-	% Assume current branch is in git refs file:
-	setting(gv_git_dir, Dir),
-	rdf_global_id(localgit:Ref, Branch),
-	directory_file_path(Dir, '.git', DotDir),
-	directory_file_path(DotDir, Ref, RefHead),
-	exists_file(RefHead),
-	read_file_to_codes(RefHead, Codes, []),
-	atom_codes(Atom, Codes),  % hash with newline
-	sub_atom(Atom, 0, 40 ,1, Hash),
-	gv_hash_uri(Hash, Commit).
+	gv_branch_head_git(Branch, Commit).
 
 %%	gv_head(+Commit) is det.
 %
@@ -254,8 +190,6 @@ gv_move_head(NewHead) :-
 
 gv_move_head_(NewHead) :-
 	setting(gv_commit_store, StoreMode),
-	setting(gv_git_dir, Dir),
-
 	gv_current_branch(Branch),
 	(   (StoreMode == rdf_only ; StoreMode == both)
 	->  rdf_retractall(Branch, gv:tip, _OldHead, 'refs/heads'),
@@ -263,14 +197,7 @@ gv_move_head_(NewHead) :-
 	;   true
 	),
 	(   (StoreMode == git_only ; StoreMode == both)
-	->  rdf_global_id(localgit:Local, Branch),
-	    directory_file_path(Dir, '.git', DotGit),
-	    directory_file_path(DotGit, Local, Filename),
-	    gv_hash_uri(Hash, NewHead),
-	    open(Filename, write, Out),
-	    write(Out, Hash), nl(Out),
-	    close(Out)
-	;   true
+	->  gv_move_head_git(Branch, NewHead)
 	).
 
 %%      gv_resource_commit(+Graph, +Committer, +Comment, -Commit)
