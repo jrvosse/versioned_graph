@@ -45,24 +45,19 @@ gv_init_git :-
 	write(Out, 'ref: refs/heads/master\n'),
 	close(Out).
 
-gv_current_branch_git(Branch) :-
+gv_current_branch_git(Ref) :-
 	setting(graph_version:gv_git_dir, Dir),
 	git(['symbolic-ref', 'HEAD'],[directory(Dir), output(OutCodes)]),!,
 	atom_codes(RefNL, OutCodes),
-	sub_atom(RefNL, 0, _, 1, Ref),
-	rdf_global_id(localgit:Ref, Branch).
+	sub_atom(RefNL, 0, _, 1, Ref).
 
-gv_commit_property_git(Commit, RDFProp) :-
-	RDFProp	=.. [RDFPred, RDFValue],
+
+gv_commit_property_git(CommitHash, RDFProp) :-
+	RDFProp	=.. [RDFPred, _RDFValue],
 	setting(graph_version:gv_git_dir, Dir),
-	gv_hash_uri(Hash, Commit),
-	catch(git(['cat-file', '-p', Hash],[directory(Dir), output(Codes)]),_,fail),
+	catch(git(['cat-file', '-p', CommitHash],[directory(Dir), output(Codes)]),_,fail),
 	phrase(commit(CommitObject), Codes),
-	(   memberchk(RDFPred, [parent, tree])
-	->  GitProp =.. [RDFPred, GitValue],
-	    option(GitProp, CommitObject),
-	    gv_hash_uri(GitValue, RDFValue)
-	;   RDFPred = comment
+	(   memberchk(RDFPred, [parent, tree, comment])
 	->  option(RDFProp, CommitObject)
 	;   memberchk(RDFPred, [committer_name, committer_date, committer_email])
 	->  option(committer(C), CommitObject),
