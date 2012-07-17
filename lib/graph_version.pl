@@ -81,7 +81,8 @@ gv_current_branch(Branch) :-
 gv_current_branch(Branch) :-
 	\+ setting(gv_refs_store, rdf_only),
 	% Assume current branch is the git symbolic ref HEAD:
-	gv_current_branch_git(Branch).
+	gv_current_branch_git(Ref),
+	rdf_global_id(localgit:Ref, Branch).
 
 %%	gv_commit_property(+Commit, -Prop) is det.
 %
@@ -96,9 +97,17 @@ gv_commit_property(Commit, Prop) :-
 	rdf_global_id(gv:Local, RdfProp),
 	rdf(Commit, RdfProp, Value0, Commit),
 	literal_text(Value0, RDFValue).
-gv_commit_property(Commit, Prop) :-
+gv_commit_property(Commit, RDFProp) :-
 	setting(gv_refs_store, git_only),
-	gv_commit_property_git(Commit, Prop).
+	RDFProp	=.. [RDFPred, RDFValue],
+	GitProp =.. [RDFPred, GitValue],
+	gv_hash_uri(Hash, Commit),
+	gv_commit_property_git(Hash, GitProp),
+	(   memberchk(RDFPred, [parent, tree])
+	->  gv_hash_uri(GitValue, RDFValue)
+	;   GitValue = RDFValue
+	).
+
 
 gv_diff(Commit1, null, Changed, OnlyIn1, OnlyIn2, Same) :-
 	gv_diff(null, Commit1, Changed, OnlyIn2, OnlyIn1, Same).
