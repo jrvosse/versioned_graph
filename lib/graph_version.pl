@@ -207,6 +207,7 @@ gv_move_head_(NewHead) :-
 	),
 	(   (StoreMode == git_only ; StoreMode == both)
 	->  gv_move_head_git(Branch, NewHead)
+	;   true
 	).
 
 %%      gv_resource_commit(+Graph, +Committer, +Comment, -Commit)
