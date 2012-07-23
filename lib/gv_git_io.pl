@@ -70,7 +70,8 @@ gv_commit_property_git(CommitHash, Prop) :-
 gv_branch_head_git(Branch, Commit) :-
 	setting(graph_version:gv_git_dir, Dir),
 	rdf_global_id(localgit:Ref, Branch),
-	git(['show-ref', '--hash', Ref],[output(Codes), directory(Dir)]),
+	catch(git(['show-ref', '--hash', Ref],
+		  [output(Codes), directory(Dir)]), _, fail),
 	atom_codes(Atom, Codes),  % hash with newline
 	sub_atom(Atom, 0, 40 ,1, Hash),
 	gv_hash_uri(Hash, Commit).
