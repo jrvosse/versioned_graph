@@ -11,6 +11,8 @@
 :- use_module(library(git)).
 :- use_module(parse_git_objects).
 
+:- use_module(library(semweb/rdf_db)).  % this should not be necessary ...
+
 %%	gv_hash_uri(+Hash, -URI) is det.
 %
 %	URI is a uri constructed by concatenating the
