@@ -417,7 +417,8 @@ gv_graph_triples(Blob, Triples) :-
 	atom_codes(TurtleAtom, Codes),
 	atom_to_memory_file(TurtleAtom, MF),
 	open_memory_file(MF, read, Stream),
-	rdf_read_turtle(stream(Stream), Triples, []),
+	rdf_read_turtle(stream(Stream), TriplesU, []),
+	sort(TriplesU, Triples),
 	free_memory_file(MF).
 
 gv_tree_triples(null, []).
@@ -428,7 +429,7 @@ gv_tree_triples(Tree, Triples) :-
 	findall(rdf(S,P,O), rdf(S,P,O,Tree), Triples0),
 	sort(Triples0, Triples).
 gv_tree_triples(Tree, Triples) :-
-	\+ setting(gv_tree_store, git_only),
+	\+ setting(gv_tree_store, rdf_only),
 	setting(gv_git_dir, Dir),
 	gv_hash_uri(Hash, Tree),
 	catch(git(['cat-file', '-p', Hash],
