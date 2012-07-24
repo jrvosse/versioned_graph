@@ -9,7 +9,8 @@
 	   gv_copy_graph/2,
 	   gv_graph_triples/2,
 	   gv_commit_property/2,
-	   gv_diff/6
+	   gv_diff/6,
+	   gv_checkout/1
 	  ]).
 
 :- use_module(library(semweb/rdf_db)).
@@ -438,3 +439,17 @@ gv_tree_triples(Tree, Triples) :-
 	      fail),
 	phrase(tree(TreeObject), Codes),
 	maplist(git_tree_pair_to_triple, TreeObject, Triples).
+
+gv_checkout(Commit) :-
+	% TODO: need to get repo in 'detached HEAD' state...
+	gv_commit_property(Commit, tree(Tree)),
+	gv_tree_triples(Tree, TreeTriples),
+	load_blobs(TreeTriples).
+
+load_blobs([]).
+load_blobs([H|T]) :-
+	H = rdf(Blob,_P,Hash),
+	gv_graph_triples(Hash, Triples),
+	gv_graph_triples(Blob, Triples),
+	load_blobs(T).
+
