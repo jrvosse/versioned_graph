@@ -42,7 +42,7 @@ author(Name,Email,Date) -->
 	name(NameC),
 	[32, 60], author_email(EmailC), [62, 32],
 	author_date(DateC,_ZoneC),
-	[10],
+	[10],!,
 	{
 	 atom_codes(Name, NameC),
 	 atom_codes(Email, EmailC),
@@ -133,7 +133,7 @@ xdigit(E) -->
 
 
 tree([H|T]) -->
-	blobline(H),
+	blobline(H),!,
 	tree(T).
 tree([]) --> [].
 

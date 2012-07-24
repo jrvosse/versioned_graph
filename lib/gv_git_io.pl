@@ -1,6 +1,5 @@
 :- module(gv_git_io,
 	 [
-	  gv_hash_uri/2,
 	  gv_init_git/0,
 	  gv_current_branch_git/1,
 	  gv_commit_property_git/2,
@@ -11,27 +10,6 @@
 :- use_module(library(git)).
 :- use_module(parse_git_objects).
 
-:- use_module(library(semweb/rdf_db)).  % this should not be necessary ...
-
-%%	gv_hash_uri(+Hash, -URI) is det.
-%
-%	URI is a uri constructed by concatenating the
-%	Hash with some additional prefix to make it a
-%	legal URI.
-%
-%	This provides a basic one to one mapping between git's SHA1 hash
-%	ids and the URIs used in RDF.
-
-gv_hash_uri(Hash, URI) :-
-	nonvar(Hash), Hash \= null,
-	!,
-	atom_concat(x, Hash, Local),
-	rdf_global_id(hash:Local, URI).
-
-gv_hash_uri(Hash, URI) :-
-	nonvar(URI),!,
-	rdf_global_id(hash:Local, URI),
-	atom_concat(x, Hash, Local).
 
 gv_init_git :-
 	setting(graph_version:gv_git_dir, Dir),
@@ -49,7 +27,7 @@ gv_init_git :-
 
 gv_current_branch_git(Ref) :-
 	setting(graph_version:gv_git_dir, Dir),
-	git(['symbolic-ref', 'HEAD'],[directory(Dir), output(OutCodes)]),!,
+	catch(git(['symbolic-ref', 'HEAD'],[directory(Dir), output(OutCodes)]), _, fail),!,
 	atom_codes(RefNL, OutCodes),
 	sub_atom(RefNL, 0, _, 1, Ref).
 
@@ -69,18 +47,14 @@ gv_commit_property_git(CommitHash, Prop) :-
 	    option(Prop, C)
 	).
 
-gv_branch_head_git(Branch, Commit) :-
+gv_branch_head_git(Ref, Hash) :-
 	setting(graph_version:gv_git_dir, Dir),
-	rdf_global_id(localgit:Ref, Branch),
 	catch(git(['show-ref', '--hash', Ref],
 		  [output(Codes), directory(Dir)]), _, fail),
 	atom_codes(Atom, Codes),  % hash with newline
-	sub_atom(Atom, 0, 40 ,1, Hash),
-	gv_hash_uri(Hash, Commit).
+	sub_atom(Atom, 0, 40 ,1, Hash).
 
-gv_move_head_git(Branch, NewHead) :-
+gv_move_head_git(Ref, Hash) :-
 	setting(graph_version:gv_git_dir, Dir),
-	gv_hash_uri(Hash, NewHead),
-	rdf_global_id(localgit:Local, Branch),
-	git(['update-ref', Local, Hash],[directory(Dir)]).
+	catch(git(['update-ref', Ref, Hash],[directory(Dir)]), _, fail).
 

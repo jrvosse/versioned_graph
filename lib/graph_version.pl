@@ -43,6 +43,27 @@
 :- listen(settings(changed(graph_version:_Setting, _Old, _New)),
 	  gv_init).
 
+%%	gv_hash_uri(+Hash, -URI) is det.
+%
+%	URI is a uri constructed by concatenating the
+%	Hash with some additional prefix to make it a
+%	legal URI.
+%
+%	This provides a basic one to one mapping between
+%       git's SHA1 hash ids and the URIs used in RDF.
+
+gv_hash_uri(Hash, URI) :-
+	nonvar(Hash), Hash \= null,
+	!,
+	atom_concat(x, Hash, Local),
+	rdf_global_id(hash:Local, URI).
+
+gv_hash_uri(Hash, URI) :-
+	nonvar(URI),!,
+	rdf_global_id(hash:Local, URI),
+	atom_concat(x, Hash, Local).
+
+
 %%	git_init is det.
 %
 %       Initialise the RDF and/or GIT version repositories.
@@ -177,7 +198,9 @@ gv_branch_head(Branch, Commit) :-
 
 gv_branch_head(Branch, Commit) :-
 	\+ setting(gv_refs_store, rdf_only),
-	gv_branch_head_git(Branch, Commit).
+	rdf_global_id(localgit:Ref, Branch),
+	gv_branch_head_git(Ref, Hash),
+	gv_hash_uri(Hash, Commit).
 
 %%	gv_head(+Commit) is det.
 %
@@ -207,7 +230,9 @@ gv_move_head_(NewHead) :-
 	;   true
 	),
 	(   (StoreMode == git_only ; StoreMode == both)
-	->  gv_move_head_git(Branch, NewHead)
+	->  gv_hash_uri(Hash, NewHead),
+	    rdf_global_id(localgit:Local, Branch),
+	    gv_move_head_git(Local, Hash)
 	;   true
 	).
 
