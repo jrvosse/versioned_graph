@@ -4,7 +4,10 @@
 	  gv_current_branch_git/1,
 	  gv_commit_property_git/2,
 	  gv_branch_head_git/2,
-	  gv_move_head_git/2
+	  gv_store_git_object/3,
+	  gv_git_cat_file/2,
+	  gv_move_head_git/2,
+	  gv_parse_tree/2
 	 ]).
 
 :- use_module(library(git)).
@@ -33,9 +36,8 @@ gv_current_branch_git(Ref) :-
 
 
 gv_commit_property_git(CommitHash, Prop) :-
-	Prop	=.. [RDFPred, _RDFValue],
-	setting(graph_version:gv_git_dir, Dir),
-	catch(git(['cat-file', '-p', CommitHash],[directory(Dir), output(Codes)]),_,fail),
+	Prop =.. [RDFPred, _RDFValue],
+	gv_git_cat_file(CommitHash, Codes),
 	phrase(commit(CommitObject), Codes),
 	(   memberchk(RDFPred, [parent, tree, comment])
 	->  option(Prop, CommitObject)
@@ -58,3 +60,31 @@ gv_move_head_git(Ref, Hash) :-
 	setting(graph_version:gv_git_dir, Dir),
 	catch(git(['update-ref', Ref, Hash],[directory(Dir)]), _, fail).
 
+
+gv_store_git_object(Hash, Object, Options) :-
+	sub_atom(Hash, 0, 2, 38, Subdir),
+	sub_atom(Hash, 2, 38, 0, Local),
+	option(directory(GitDir), Options),
+	directory_file_path(GitDir, '.git/objects', GitObjects),
+	directory_file_path(GitObjects, Subdir, Dir),
+	directory_file_path(Dir,Local, File),
+	(   exists_directory(Dir) -> true; make_directory(Dir)),
+	(   exists_file(File)
+	->  true
+	;   open(File, write, Output, [type(binary)]),
+	    zopen(Output, Zout, []),
+	    write(Zout, Object),
+	    close(Zout)
+	).
+
+
+gv_git_cat_file(Hash, Codes) :-
+	setting(graph_version:gv_git_dir, Dir),
+	catch(git(['cat-file', '-p', Hash],
+		  [directory(Dir), output(Codes)]),
+	      _,
+	      fail).
+
+gv_parse_tree(Hash, TreeObject):-
+	gv_git_cat_file(Hash, Codes),
+	phrase(tree(TreeObject), Codes).

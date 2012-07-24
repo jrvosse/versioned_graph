@@ -18,7 +18,6 @@
 :- use_module(library(semweb/rdf_turtle_write)).
 :- use_module(library(semweb/rdf_label)).
 :- use_module(library(settings)).
-:- use_module(library(git)).
 
 :- use_module(url_to_filename).
 :- use_module(hash_atom).
@@ -194,6 +193,7 @@ gv_graphs_changed([rdf(S1,P1,O1)|T1], [rdf(S2,P2,O2)|T2],
 %
 %	Commit is unified with the tip of branch Branch.
 gv_branch_head(Branch, Commit) :-
+	\+ setting(gv_refs_store, git_only),
 	rdf(Branch, gv:tip, Commit, 'refs/heads'), !.
 
 gv_branch_head(Branch, Commit) :-
@@ -317,19 +317,6 @@ gv_resource_commit_(Graph, Committer, Comment, Commit) :-
 	gv_move_head(Commit).
 
 
-gv_store_git_object(Hash, Object, Options) :-
-	sub_atom(Hash, 0, 2, 38, Subdir),
-	sub_atom(Hash, 2, 38, 0, Local),
-	option(directory(GitDir), Options),
-	directory_file_path(GitDir, '.git/objects', GitObjects),
-	directory_file_path(GitObjects, Subdir, Dir),
-	directory_file_path(Dir,Local, File),
-	(   exists_directory(Dir) -> true; make_directory(Dir)),
-	open(File, write, Output, [type(binary)]),
-	zopen(Output, Zout, []),
-	write(Zout, Object),
-	close(Zout).
-
 %%	gv_store_graph(+Graph, -Blob, +Options) is det.
 %
 %	Snapshot of Graph is stored in Blob.
@@ -434,13 +421,9 @@ gv_graph_triples(Graph, Triples) :-
 
 gv_graph_triples(Blob, Triples) :-
 	setting(gv_blob_store, git_only),
-	setting(gv_git_dir, Dir),
 	gv_hash_uri(Hash, Blob),
-	catch(git(['cat-file', '-p', Hash],
-		  [directory(Dir), output(Codes)]),
-	      _,
-	      fail),
-	atom_codes(TurtleAtom, Codes),
+	gv_git_cat_file(Hash,Codes),
+	atom_codes(TurtleAtom,Codes),
 	atom_to_memory_file(TurtleAtom, MF),
 	open_memory_file(MF, read, Stream),
 	rdf_read_turtle(stream(Stream), TriplesU, []),
@@ -456,12 +439,9 @@ gv_tree_triples(Tree, Triples) :-
 	sort(Triples0, Triples).
 gv_tree_triples(Tree, Triples) :-
 	\+ setting(gv_tree_store, rdf_only),
-	setting(gv_git_dir, Dir),
 	gv_hash_uri(Hash, Tree),
-	catch(git(['cat-file', '-p', Hash],
-		  [directory(Dir), output(Codes)]),
-	      _,
-	      fail),
+	gv_parse_tree(Hash, TreeObject),
+	gv_git_cat_file(Hash, Codes),
 	phrase(tree(TreeObject), Codes),
 	maplist(git_tree_pair_to_triple, TreeObject, Triples).
 
