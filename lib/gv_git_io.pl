@@ -62,6 +62,20 @@ gv_move_head_git(Ref, Hash) :-
 
 
 gv_store_git_object(Hash, Object, Options) :-
+	option(type(Type), Options, blob),
+	(   Type == tree
+	->  Encoding = binary
+	;   Encoding = utf8
+	),
+	tmp_file_stream(Encoding, Tmp, Stream),
+	write(Stream, Object), close(Stream),
+	catch(git(['hash-object', '-w', '-t', Type, Tmp],[output(Codes)|Options]), _, fail),
+	atom_codes(HashN, Codes),
+	sub_atom(HashN, 0, _, 1, GitHash), % remove trailing new line ...
+	assertion(Hash == GitHash), !.
+
+gv_store_git_object(Hash, Object, Options) :-
+	fail, % this does not work because of encoding issues...
 	sub_atom(Hash, 0, 2, 38, Subdir),
 	sub_atom(Hash, 2, 38, 0, Local),
 	option(directory(GitDir), Options),
