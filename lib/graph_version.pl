@@ -292,14 +292,19 @@ gv_resource_commit_(Graph, Committer, Comment, Commit) :-
 	->  format(atom(ParentLine), 'parent ~w~n', [ParentHash])
 	;   ParentLine = ''
 	),
-	format(atom(GitCommitContent),
+	new_memory_file(MF),
+	open_memory_file(MF, write, Out),
+	format(Out,
 	       'tree ~w~n~wauthor ~w <~w> ~w~ncommitter ~w <~w> ~w~n~n~w~n',
 	       [TreeHash, ParentLine,
 		Committer, Email, GitTimeStamp,
 		Committer, Email, GitTimeStamp,
 		Comment]),
-	atom_length(GitCommitContent, Clen),
-	format(atom(GitObject), 'commit ~d\u0000~w', [Clen, GitCommitContent]),
+	close(Out),
+	size_memory_file(MF, ByteSize, octet), % Git counts the size in bytes not chars!
+	memory_file_to_atom(MF, GitCommitContent),
+	free_memory_file(MF),
+	format(atom(GitObject), 'commit ~d\u0000~w', [ByteSize, GitCommitContent]),
 	sha_hash(GitObject, Sha, []),
 	hash_atom(Sha, Hash),
 	gv_hash_uri(Hash, Commit),
@@ -311,7 +316,7 @@ gv_resource_commit_(Graph, Committer, Comment, Commit) :-
 	;   true
 	),
 	(   (StoreMode == git_only ; StoreMode == both)
-	->  gv_store_git_object(Hash, GitObject, Options)
+	->  gv_store_git_object(Hash, GitCommitContent, [type(commit)|Options])
 	;   true
 	),
 	gv_move_head(Commit).
@@ -339,7 +344,7 @@ gv_store_graph(Graph, Uri, Options) :-
 	;   true
 	),
 	(   (StoreMode == git_only ; StoreMode == both)
-	->  gv_store_git_object(Hash, Blob, Options)
+	->  gv_store_git_object(Hash, Turtle, [type(blob)|Options])
 	;   true
 	).
 
@@ -369,7 +374,7 @@ gv_add_blob_to_tree(Tree, Graph, Uri, NewTree, Options) :-
 	;   true
 	),
 	(   (StoreMode == git_only ; StoreMode == both)
-	->  gv_store_git_object(Hash,TreeObject, Options)
+	->  gv_store_git_object(Hash,TreeContent, [type(tree)|Options])
 	;   true
 	).
 
