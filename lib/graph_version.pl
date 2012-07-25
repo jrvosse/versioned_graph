@@ -30,13 +30,13 @@
 
 :- setting(gv_git_dir, atom, 'gv.git',
 	   'GIT repository for named graph snapshots').
-:- setting(gv_blob_store,   oneof([git_only, rdf_only, both]), rdf_only,
+:- setting(gv_blob_store,   oneof([git_only, rdf_only, both]), git_only,
 	   'Where to store blob snapshots objects').
-:- setting(gv_tree_store,   oneof([git_only, rdf_only, both]), rdf_only,
+:- setting(gv_tree_store,   oneof([git_only, rdf_only, both]), git_only,
 	   'Where to store tree snapshots objects').
-:- setting(gv_commit_store, oneof([git_only, rdf_only, both]), rdf_only,
+:- setting(gv_commit_store, oneof([git_only, rdf_only, both]), git_only,
 	   'Where to store commit objects').
-:- setting(gv_refs_store, oneof([git_only, rdf_only, both]),   rdf_only,
+:- setting(gv_refs_store, oneof([git_only, rdf_only, both]),   git_only,
 	   'Where to store HEAD, refs etc.').
 
 :- listen(settings(changed(graph_version:_Setting, _Old, _New)),
@@ -449,12 +449,71 @@ gv_checkout(Commit) :-
 	% TODO: need to get repo in 'detached HEAD' state...
 	gv_commit_property(Commit, tree(Tree)),
 	gv_tree_triples(Tree, TreeTriples),
-	load_blobs(TreeTriples).
+	load_blobs(TreeTriples, graph).
 
-load_blobs([]).
-load_blobs([H|T]) :-
-	H = rdf(Blob,_P,Hash),
+load_blobs([], _) :- !.
+load_blobs([rdf(_Blob, _P, Hash)|T], hash) :-
+	rdf_graph(Hash),!,
+	load_blobs(T, hash).
+load_blobs([rdf(Blob,_P,Hash)|T], Mode) :-
 	gv_graph_triples(Hash, Triples),
-	gv_graph_triples(Blob, Triples),
-	load_blobs(T).
+	(   Mode == graph
+	->  gv_graph_triples(Blob, Triples)
+	;   gv_graph_triples(Hash, Triples)
+	),
+	load_blobs(T, Mode).
 
+
+gv_restore_rdf_from_git :-
+	gv_head(Head),
+	gv_checkout(Head),
+	gv_restore_rdf_from_git(Head).
+
+gv_restore_rdf_from_git(Commit) :-
+	gv_commit_property(Commit, tree(Tree)),
+	tree_to_rdf(Tree),
+	commit_to_rdf(Commit),
+	(   gv_commit_property(Commit, parent(Parent))
+	->  gv_restore_rdf_from_git(Parent)
+	;   true
+	).
+
+tree_to_rdf(Tree) :-
+	(   rdf_graph(Tree)
+	->  true
+	;   gv_tree_triples(Tree, Triples),
+	    gv_graph_triples(Tree, Triples)
+	),
+	load_blobs(Triples, hash).
+
+commit_to_rdf(Commit) :-
+	(   rdf_graph(Commit)
+	->  true
+	;   gv_hash_uri(Hash, Commit),
+	    gv_git_cat_file(Hash, Codes),
+	    phrase(commit(CommitObject), Codes),
+	    assert_commit_props(CommitObject, Commit)
+	).
+
+assert_commit_props([], _).
+assert_commit_props([parent(null)|T], Graph) :-
+	!,
+	assert_commit_props(T, Graph).
+assert_commit_props([H|T], Graph) :-
+	H =.. [P,V],
+	member(P, [comment, author_name, author_date, author_email,
+		  committer_name, committer_date, committer_email]),
+	!,
+	rdf_global_id(gv:P, Pred),
+	rdf_assert(Graph, Pred, literal(V), Graph),
+	assert_commit_props(T, Graph).
+assert_commit_props([H|T], Graph) :-
+	!,
+	H =.. [P,V],
+	(   member(P, [tree, parent])
+	->  gv_hash_uri(V, Object),
+	    rdf_global_id(gv:P, Pred),
+	    rdf_assert(Graph, Pred, Object, Graph)
+	;   assert_commit_props(V, Graph)
+	),
+	assert_commit_props(T, Graph).
