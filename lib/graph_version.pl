@@ -113,13 +113,13 @@ gv_current_branch(Branch) :-
 gv_commit_property(null, tree(null)) :- !.
 
 gv_commit_property(Commit, Prop) :-
-	\+ setting(gv_refs_store, git_only),
+	\+ setting(gv_commit_store, git_only),
 	Prop  =.. [Local, RDFValue],
 	rdf_global_id(gv:Local, RdfProp),
 	rdf(Commit, RdfProp, Value0, Commit),
 	literal_text(Value0, RDFValue).
 gv_commit_property(Commit, RDFProp) :-
-	setting(gv_refs_store, git_only),
+	setting(gv_commit_store, git_only),
 	RDFProp	=.. [RDFPred, RDFValue],
 	GitProp =.. [RDFPred, GitValue],
 	gv_hash_uri(Hash, Commit),
@@ -130,8 +130,11 @@ gv_commit_property(Commit, RDFProp) :-
 	).
 
 
-gv_diff(Commit1, null, Changed, OnlyIn1, OnlyIn2, Same) :-
-	gv_diff(null, Commit1, Changed, OnlyIn2, OnlyIn1, Same).
+gv_diff(Commit1, null, [], OnlyIn1, [], []) :-
+	gv_commit_property(Commit1, tree(Tree1)),
+	gv_tree_triples(Tree1, Tree1Triples),
+	gv_graphs_changed(Tree1Triples, [], [], OnlyIn1S, [], []),
+	gv_triples_changed(OnlyIn1S, OnlyIn1).
 
 gv_diff(null, Commit2, [], [], OnlyIn2, []) :-
 	gv_commit_property(Commit2, tree(Tree2)),
@@ -222,7 +225,7 @@ gv_move_head(NewHead) :-
 	with_mutex(gv_head_mutex, gv_move_head_(NewHead)).
 
 gv_move_head_(NewHead) :-
-	setting(gv_commit_store, StoreMode),
+	setting(gv_refs_store, StoreMode),
 	gv_current_branch(Branch),
 	(   (StoreMode == rdf_only ; StoreMode == both)
 	->  rdf_retractall(Branch, gv:tip, _OldHead, 'refs/heads'),
@@ -470,9 +473,13 @@ load_blobs([rdf(Blob,_P,Hash)|T], Mode) :-
 
 
 gv_restore_rdf_from_git :-
+	setting(gv_commit_store, CommitStore),
+	set_setting(gv_commit_store, git_only),
+
 	gv_head(Head),
 	gv_checkout(Head),
-	gv_restore_rdf_from_git(Head).
+	gv_restore_rdf_from_git(Head),
+	set_setting(gv_commit_store, CommitStore).
 
 gv_restore_rdf_from_git(Commit) :-
 	gv_commit_property(Commit, tree(Tree)),
@@ -522,3 +529,9 @@ assert_commit_props([H|T], Graph) :-
 	;   assert_commit_props(V, Graph)
 	),
 	assert_commit_props(T, Graph).
+
+
+
+
+
+
