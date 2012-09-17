@@ -73,9 +73,10 @@ gv_init :-
 	setting(gv_commit_store, CS),
 	setting(gv_refs_store,   RS),
 	sort([BS,TS,CS,RS], StorageOpts),
+	rdf_equal(localgit:'refs/heads/master', Master),
 	(   (StorageOpts == [git_only] ; rdf_graph('HEAD'))
 	->  true % no need to init RDF storage
-	;   gv_init_rdf
+	;   gv_init_rdf(Master)
 	),
 
 	(   (StorageOpts == [rdf_only] ; exists_directory(Dir) )
@@ -84,8 +85,8 @@ gv_init :-
 	).
 
 
-gv_init_rdf :-
-	rdf_assert(gv:default, gv:branch, localgit:'refs/heads/master', 'HEAD').
+gv_init_rdf(Ref) :-
+	rdf_assert(gv:default, gv:branch, Ref, 'HEAD').
 
 
 :- gv_init.
@@ -228,8 +229,7 @@ gv_move_head_(NewHead) :-
 	setting(gv_refs_store, StoreMode),
 	gv_current_branch(Branch),
 	(   (StoreMode == rdf_only ; StoreMode == both)
-	->  rdf_retractall(Branch, gv:tip, _OldHead, 'refs/heads'),
-	    rdf_assert(    Branch, gv:tip,  NewHead, 'refs/heads')
+	->  gv_move_head_rdf(Branch, NewHead)
 	;   true
 	),
 	(   (StoreMode == git_only ; StoreMode == both)
@@ -238,6 +238,10 @@ gv_move_head_(NewHead) :-
 	    gv_move_head_git(Local, Hash)
 	;   true
 	).
+
+gv_move_head_rdf(Branch, NewHead) :-
+	rdf_retractall(Branch, gv:tip, _OldHead, 'refs/heads'),
+	rdf_assert(    Branch, gv:tip,  NewHead, 'refs/heads').
 
 %%      gv_resource_commit(+Graph, +Committer, +Comment, -Commit)
 %
@@ -433,7 +437,7 @@ gv_graph_triples(Blob, Triples) :-
 	gv_git_cat_file(Hash,Codes),
 	atom_codes(TurtleAtom,Codes),
 	atom_to_memory_file(TurtleAtom, MF),
-	open_memory_file(MF, read, Stream),
+	open_memory_file(MF, read, Stream, [encoding(octet)]),
 	rdf_read_turtle(stream(Stream), TriplesU, []),
 	sort(TriplesU, Triples),
 	free_memory_file(MF).
@@ -449,8 +453,6 @@ gv_tree_triples(Tree, Triples) :-
 	\+ setting(gv_tree_store, rdf_only),
 	gv_hash_uri(Hash, Tree),
 	gv_parse_tree(Hash, TreeObject),
-	gv_git_cat_file(Hash, Codes),
-	phrase(tree(TreeObject), Codes),
 	maplist(git_tree_pair_to_triple, TreeObject, Triples).
 
 gv_checkout(Commit) :-
@@ -473,33 +475,55 @@ load_blobs([rdf(Blob,_P,Hash)|T], Mode) :-
 
 
 gv_restore_rdf_from_git :-
+	gv_restore_rdf_from_git(
+	    [commits(restore),
+	     trees(ignore),
+	     blobs(ignore)
+	    ]).
+
+gv_restore_rdf_from_git(Options) :-
 	setting(gv_commit_store, CommitStore),
+	setting(gv_refs_store, RefStore),
 	set_setting(gv_commit_store, git_only),
+	set_setting(gv_refs_store, git_only),
 
-	gv_head(Head),
+	gv_current_branch(Branch),
+	gv_branch_head(Branch, Head),
+	gv_init_rdf(Branch),  % make sure RDF is on branch too
+	gv_move_head_rdf(Branch, Head),
 	gv_checkout(Head),
-	gv_restore_rdf_from_git(Head),
-	set_setting(gv_commit_store, CommitStore).
+	gv_restore_rdf_from_git(Head, Options),
 
-gv_restore_rdf_from_git(Commit) :-
+	set_setting(gv_commit_store, CommitStore),
+	set_setting(gv_refs_store, RefStore).
+
+gv_restore_rdf_from_git(Commit, Options) :-
 	gv_commit_property(Commit, tree(Tree)),
-	tree_to_rdf(Tree),
-	commit_to_rdf(Commit),
+	tree_to_rdf(Tree, Options),
+	commit_to_rdf(Commit, Options),
 	(   gv_commit_property(Commit, parent(Parent))
-	->  gv_restore_rdf_from_git(Parent)
+	->  gv_restore_rdf_from_git(Parent, Options)
 	;   true
 	).
 
-tree_to_rdf(Tree) :-
+tree_to_rdf(Tree, Options) :-
 	(   rdf_graph(Tree)
 	->  true
 	;   gv_tree_triples(Tree, Triples),
-	    gv_graph_triples(Tree, Triples)
+	    (	option(trees(ignore), Options)
+	    ->  true
+	    ;	gv_graph_triples(Tree, Triples)
+	    )
 	),
-	load_blobs(Triples, hash).
+	(   option(blobs(ignore), Options)
+	->  true
+	;   load_blobs(Triples, hash)
+	).
 
-commit_to_rdf(Commit) :-
+commit_to_rdf(Commit, Options) :-
 	(   rdf_graph(Commit)
+	->  true
+	;   option(commits(ignore), Options)
 	->  true
 	;   gv_hash_uri(Hash, Commit),
 	    gv_git_cat_file(Hash, Codes),
@@ -535,3 +559,9 @@ assert_commit_props([H|T], Graph) :-
 
 
 
+cliopatria:list_resource(URI) :-
+	gv_hash_uri(_Hash, URI),
+	\+ rdf_graph(URI),
+	gv_graph_triples(URI, Triples), % load
+	gv_graph_triples(URI, Triples), % save
+	fail. % now do the normal thing.
