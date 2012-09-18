@@ -436,11 +436,11 @@ gv_graph_triples(Blob, Triples) :-
 	gv_hash_uri(Hash, Blob),
 	gv_git_cat_file(Hash,Codes),
 	atom_codes(TurtleAtom,Codes),
-	atom_to_memory_file(TurtleAtom, MF),
-	open_memory_file(MF, read, Stream, [encoding(octet)]),
-	rdf_read_turtle(stream(Stream), TriplesU, []),
-	sort(TriplesU, Triples),
-	free_memory_file(MF).
+	% atom_to_memory_file(TurtleAtom, MF),
+	% open_memory_file(MF, read, Stream, [encoding(octet)]),
+	% rdf_read_turtle(stream(Stream), TriplesU, []),
+	rdf_read_turtle(atom(TurtleAtom), TriplesU, [base_uri(Blob)]),
+	sort(TriplesU, Triples).
 
 gv_tree_triples(null, []).
 gv_tree_triples(Tree, Triples) :-
@@ -477,8 +477,8 @@ load_blobs([rdf(Blob,_P,Hash)|T], Mode) :-
 gv_restore_rdf_from_git :-
 	gv_restore_rdf_from_git(
 	    [commits(restore),
-	     trees(ignore),
-	     blobs(ignore)
+	     trees(restore),
+	     blobs(restore)
 	    ]).
 
 gv_restore_rdf_from_git(Options) :-
@@ -498,6 +498,7 @@ gv_restore_rdf_from_git(Options) :-
 	set_setting(gv_refs_store, RefStore).
 
 gv_restore_rdf_from_git(Commit, Options) :-
+	debug(gv, 'Restoring commit ~p', [Commit]),
 	gv_commit_property(Commit, tree(Tree)),
 	tree_to_rdf(Tree, Options),
 	commit_to_rdf(Commit, Options),
