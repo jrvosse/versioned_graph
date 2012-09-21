@@ -439,7 +439,7 @@ gv_graph_triples(Blob, Triples) :-
 	% atom_to_memory_file(TurtleAtom, MF),
 	% open_memory_file(MF, read, Stream, [encoding(octet)]),
 	% rdf_read_turtle(stream(Stream), TriplesU, []),
-	rdf_read_turtle(atom(TurtleAtom), TriplesU, [base_uri(Blob)]),
+	rdf_read_turtle(atom(TurtleAtom), TriplesU, []),
 	sort(TriplesU, Triples).
 
 gv_tree_triples(null, []).
