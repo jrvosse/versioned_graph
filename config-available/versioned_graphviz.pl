@@ -1,4 +1,4 @@
-:- module(opm_graph, []).
+:- module(version_opm_graph, []).
 
 
 :- use_module(cliopatria(hooks)).
