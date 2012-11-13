@@ -11,7 +11,7 @@
 # this.  Otherwise you can specify the information inline as done below.
 # See http://xmlns.com/foaf/spec/ for defines fields.
 
-<> a cpack:Package ;
+<> a cpack:Library ;
 	cpack:packageName "versioned_graph" ;
 	dcterms:title "Named RDF graphs with versioning" ;
 	cpack:author [ a foaf:Person ;
@@ -24,10 +24,12 @@
 	    ] ;
 	cpack:description
 
-"""Package to version RDF named graphs.  
+"""Library to version RDF named graphs.  
+
 In the normal GIT model every commit object refers to a tree object, which represents a complete snapshot of the project directory tree.
 Trees are recursive structures of other tree objects (subdirectories) and hashes of blobs (storing the contents of files in the dir).
-In this package every commit also refers to a tree object, but this represents a complete snapshot of all tracked named graphs in the triple store.
+
+In this library every commit also refers to a tree object, but this represents a complete snapshot of all tracked named graphs in the triple store.
 A tree thus describes the urls of the named graphs with hashes of the blobs which store the actual triples of each named graph.
 The backend storage is by default done in a normal git repo, but this can be switched to a triple-based storage model where each git object
 is represented by a named graph in the triple store (node that this can lead to many named graphs).
