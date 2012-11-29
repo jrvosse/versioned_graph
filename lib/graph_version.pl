@@ -422,7 +422,7 @@ gv_copy_graph(Source, Target) :-
 gv_graph_triples(Graph, Triples) :-
 	nonvar(Triples),
 	nonvar(Graph),!,
-	(   rdf_graph(Graph) -> rdf_unload_graph(Graph); true ),
+	(   rdf_graph(Graph) -> rdf_unload(Graph); true ),
 	rdf_transaction(
 	    forall(member(rdf(S,P,O), Triples),
 		   rdf_assert(S,P,O, Graph))).
