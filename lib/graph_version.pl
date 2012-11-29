@@ -422,6 +422,7 @@ gv_copy_graph(Source, Target) :-
 gv_graph_triples(Graph, Triples) :-
 	nonvar(Triples),
 	nonvar(Graph),!,
+	(   rdf_graph(Graph) -> rdf_unload_graph(Graph); true ),
 	rdf_transaction(
 	    forall(member(rdf(S,P,O), Triples),
 		   rdf_assert(S,P,O, Graph))).
@@ -444,6 +445,7 @@ gv_graph_triples(Blob, Triples) :-
 	rdf_read_turtle(atom(TurtleAtom), TriplesU, []),
 	sort(TriplesU, Triples).
 
+
 gv_tree_triples(null, []).
 gv_tree_triples(Tree, Triples) :-
 	nonvar(Tree),
@@ -458,10 +460,15 @@ gv_tree_triples(Tree, Triples) :-
 	maplist(git_tree_pair_to_triple, TreeObject, Triples).
 
 gv_checkout(Commit) :-
-	% TODO: need to get repo in 'detached HEAD' state...
+	% TODO: need to get repo in 'detached HEAD' state if commit \= HEAD ...
 	gv_commit_property(Commit, tree(Tree)),
 	gv_tree_triples(Tree, TreeTriples),
-	load_blobs(TreeTriples, graph).
+
+	setting(gv_blob_store,  BlobsStore),
+	set_setting(gv_blob_store, git_only),
+	load_blobs(TreeTriples, graph),
+	set_setting(gv_blob_store,  BlobsStore).
+
 
 load_blobs([], _) :- !.
 load_blobs([rdf(_Blob, _P, Hash)|T], hash) :-
