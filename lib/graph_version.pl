@@ -517,9 +517,10 @@ gv_restore_rdf_from_git(Commit, Options) :-
 	).
 
 tree_to_rdf(Tree, Options) :-
+	gv_tree_triples(Tree, Triples),
 	(   rdf_graph(Tree)
 	->  true
-	;   gv_tree_triples(Tree, Triples),
+	;
 	    (	option(trees(ignore), Options)
 	    ->  true
 	    ;	gv_graph_triples(Tree, Triples)
