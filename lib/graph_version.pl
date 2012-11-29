@@ -10,7 +10,9 @@
 	   gv_graph_triples/2,
 	   gv_commit_property/2,
 	   gv_diff/6,
-	   gv_checkout/1
+	   gv_checkout/1,             % Restore named graphs from commit
+	   gv_restore_rdf_from_git/0, % Restore HEAD + all objects
+	   gv_restore_rdf_from_git/2
 	  ]).
 
 :- use_module(library(semweb/rdf_db)).
@@ -483,8 +485,13 @@ gv_restore_rdf_from_git :-
 
 gv_restore_rdf_from_git(Options) :-
 	setting(gv_commit_store, CommitStore),
-	setting(gv_refs_store, RefStore),
+	setting(gv_tree_store,   TreeStore),
+	setting(gv_blob_store,  BlobsStore),
+	setting(gv_refs_store,   RefStore),
+
 	set_setting(gv_commit_store, git_only),
+	set_setting(gv_tree_store, git_only),
+	set_setting(gv_blob_store, git_only),
 	set_setting(gv_refs_store, git_only),
 
 	gv_current_branch(Branch),
@@ -495,7 +502,9 @@ gv_restore_rdf_from_git(Options) :-
 	gv_restore_rdf_from_git(Head, Options),
 
 	set_setting(gv_commit_store, CommitStore),
-	set_setting(gv_refs_store, RefStore).
+	set_setting(gv_tree_store,   TreeStore),
+	set_setting(gv_blob_store,  BlobsStore),
+	set_setting(gv_refs_store,   RefStore).
 
 gv_restore_rdf_from_git(Commit, Options) :-
 	debug(gv, 'Restoring commit ~p', [Commit]),
