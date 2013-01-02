@@ -339,7 +339,10 @@ gv_store_graph(Graph, Uri, Options) :-
 	setting(gv_blob_store, StoreMode),
 	new_memory_file(MF),
 	open_memory_file(MF, write, Out),
-	rdf_save_canonical_turtle(Out, [graph(Graph), encoding(utf8)]),
+	(   rdf_statistics(triples_by_graph(Graph, _))
+	->  rdf_save_canonical_turtle(Out, [graph(Graph), encoding(utf8)])
+	;   true % empty graph, store empty file
+	),
 	close(Out),
 	size_memory_file(MF, ByteSize, octet), % Git counts the size in bytes not chars!
 	memory_file_to_atom(MF, Turtle),
