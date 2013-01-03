@@ -339,7 +339,7 @@ gv_store_graph(Graph, Uri, Options) :-
 	setting(gv_blob_store, StoreMode),
 	new_memory_file(MF),
 	open_memory_file(MF, write, Out),
-	(   rdf_statistics(triples_by_graph(Graph, _))
+	(   rdf_statistics(triples_by_graph(Graph, _)) % FIXME: no longer needed in swipl 6.3.8
 	->  rdf_save_canonical_turtle(Out, [graph(Graph), encoding(utf8)])
 	;   true % empty graph, store empty file
 	),
