@@ -37,7 +37,8 @@ url_encode(Enc) -->
 	(   "\r\n"
 	;   "\n"
 	), !,
-	{ append("%0D%0A", T, Enc)
+	{ atom_codes('%0D%0A', Codes),
+	  append(Codes, T, Enc)
 	},
 	url_encode(T).
 url_encode([]) -->
