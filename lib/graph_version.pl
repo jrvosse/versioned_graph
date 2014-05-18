@@ -1,6 +1,5 @@
 :- module(graph_version,
-	  [
-	   gv_init/0,
+	  [gv_init/0,
 	   gv_current_branch/1,
 	   gv_branch_head/2,
 	   gv_resource_commit/4,
@@ -10,6 +9,7 @@
 	   gv_graph_triples/2,
 	   gv_commit_property/2,
 	   gv_diff/6,
+	   gv_checkout/0,             % Load RDF named graphs from current HEAD
 	   gv_checkout/1,             % Restore named graphs from commit
 	   gv_restore_rdf_from_git/0, % Restore HEAD + all objects
 	   gv_restore_rdf_from_git/2
@@ -461,6 +461,10 @@ gv_tree_triples(Tree, Triples) :-
 	gv_hash_uri(Hash, Tree),
 	gv_parse_tree(Hash, TreeObject),
 	maplist(git_tree_pair_to_triple, TreeObject, Triples).
+
+gv_checkout :-
+	gv_head(HEAD),
+	gv_checkout(HEAD).
 
 gv_checkout(Commit) :-
 	% TODO: need to get repo in 'detached HEAD' state if commit \= HEAD ...
