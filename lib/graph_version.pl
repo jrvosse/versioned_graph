@@ -442,10 +442,8 @@ gv_graph_triples(Blob, Triples) :-
 	gv_hash_uri(Hash, Blob),
 	gv_git_cat_file(Hash,Codes),
 	atom_codes(TurtleAtom,Codes),
-	% atom_to_memory_file(TurtleAtom, MF),
-	% open_memory_file(MF, read, Stream, [encoding(octet)]),
-	% rdf_read_turtle(stream(Stream), TriplesU, []),
-	rdf_read_turtle(atom(TurtleAtom), TriplesU, [anon_prefix('__bnode_from_git')]),
+	format(atom(AnonPrefix), '__bnode_git_~w', [Hash]),
+	rdf_read_turtle(atom(TurtleAtom), TriplesU, [anon_prefix(AnonPrefix)]),
 	sort(TriplesU, Triples).
 
 
