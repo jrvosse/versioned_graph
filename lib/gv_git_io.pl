@@ -16,6 +16,16 @@
 
 gv_init_git :-
 	setting(graph_version:gv_git_dir, Dir),
+	(   exists_directory(Dir)
+	->  true
+	;   make_directory(Dir),
+	    catch(git(['init', '--bare'],[directory(Dir)]), _, fail)
+	).
+
+
+gv_init_git :-
+	fail,
+	setting(graph_version:gv_git_dir, Dir),
 	directory_file_path(Dir, '.git', DotDir),
 	directory_file_path(DotDir, objects, ObjectsDir),
 	directory_file_path(DotDir, 'HEAD', HEAD),
@@ -73,23 +83,6 @@ gv_store_git_object(Hash, Object, Options) :-
 	atom_codes(HashN, Codes),
 	sub_atom(HashN, 0, _, 1, GitHash), % remove trailing new line ...
 	assertion(Hash == GitHash), !.
-
-gv_store_git_object(Hash, Object, Options) :-
-	fail, % this does not work because of encoding issues...
-	sub_atom(Hash, 0, 2, 38, Subdir),
-	sub_atom(Hash, 2, 38, 0, Local),
-	option(directory(GitDir), Options),
-	directory_file_path(GitDir, '.git/objects', GitObjects),
-	directory_file_path(GitObjects, Subdir, Dir),
-	directory_file_path(Dir,Local, File),
-	(   exists_directory(Dir) -> true; make_directory(Dir)),
-	(   exists_file(File)
-	->  true
-	;   open(File, write, Output, [type(binary)]),
-	    zopen(Output, Zout, []),
-	    write(Zout, Object),
-	    close(Zout)
-	).
 
 
 gv_git_cat_file(Hash, Codes) :-
