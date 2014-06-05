@@ -44,7 +44,7 @@
 :- listen(settings(changed(graph_version:_Setting, _Old, _New)),
 	  gv_init).
 
-%%	gv_hash_uri(+Hash, -URI) is det.
+%%	gv_hash_uri(?Hash, ?URI) is det.
 %
 %	URI is a uri constructed by concatenating the
 %	Hash with some additional prefix to make it a
