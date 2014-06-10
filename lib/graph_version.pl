@@ -2,6 +2,7 @@
 	  [gv_init/0,
 	   gv_current_branch/1,
 	   gv_branch_head/2,
+	   gv_commit/4,
 	   gv_resource_commit/4,
 	   gv_head/1,
 	   gv_hash_uri/2,
@@ -268,15 +269,38 @@ gv_resource_commit(Graph, Committer, Comment, Commit) :-
 		   gv_resource_commit_(
 		       Graph, Committer, Comment, Commit)).
 
+gv_commit(Graphs, Committer, Comment, Commit) :-
+	with_mutex(gv_commit_mutex,
+		   gv_commit_(
+		       Graphs, Committer, Comment, Commit)).
+
+gv_commit_(Graphs0, Committer, Comment, Commit) :-
+	is_list(Graphs0),
+	sort(Graphs0, Graphs),
+	setting(gv_git_dir, Dir),
+	gv_head(HEAD),
+	gv_commit_property(HEAD, tree(CurrentTree)),
+	Options=[directory(Dir)],
+	maplist(gv_store_graph(Options),Graphs, Blobs),
+	gv_add_blobs_to_tree(CurrentTree, Graphs, Blobs, NewTree, Options),
+
+	gv_create_commit_object(NewTree,Committer, Comment, Commit, Options),
+	gv_move_head(Commit).
+
 gv_resource_commit_(Graph, Committer, Comment, Commit) :-
 	setting(gv_git_dir, Dir),
-	setting(gv_commit_store, StoreMode),
 	Options=[directory(Dir)],
-	gv_store_graph(Graph, BlobUri, Options),
-
+	gv_store_graph(Options, Graph, BlobUri),
 	gv_head(HEAD),
 	gv_commit_property(HEAD, tree(CurrentTree)),
 	gv_add_blob_to_tree(CurrentTree, Graph, BlobUri, NewTree, Options),
+	gv_create_commit_object(NewTree,Committer, Comment, Commit, Options),
+	gv_move_head(Commit).
+
+
+gv_create_commit_object(NewTree, Committer, Comment, Commit, Options) :-
+	setting(gv_commit_store, StoreMode),
+	gv_head(HEAD),
 	get_time(Now),
 	format_time(atom(GitTimeStamp), '%s %z', Now), % Git format
 	format_time(atom(RDFTimeStamp), '%s',    Now), % Hack format ...
@@ -327,15 +351,14 @@ gv_resource_commit_(Graph, Committer, Comment, Commit) :-
 	(   (StoreMode == git_only ; StoreMode == both)
 	->  gv_store_git_object(Hash, GitCommitContent, [type(commit)|Options])
 	;   true
-	),
-	gv_move_head(Commit).
+	).
 
 
-%%	gv_store_graph(+Graph, -Blob, +Options) is det.
+%%	gv_store_graph(+Options, +Graph, -Blob) is det.
 %
 %	Snapshot of Graph is stored in Blob.
 
-gv_store_graph(Graph, Uri, Options) :-
+gv_store_graph(Options, Graph, Uri) :-
 	setting(gv_blob_store, StoreMode),
 	new_memory_file(MF),
 	open_memory_file(MF, write, Out),
@@ -360,12 +383,24 @@ gv_store_graph(Graph, Uri, Options) :-
 	;   true
 	).
 
+ps(P,S, rdf(S,P,_)).
+pso(P,S,O, rdf(S,P,O)).
+
+gv_add_blobs_to_tree(Tree, Graphs, Blobs, NewTree, Options) :-
+	rdf_equal(HashProp, gv:blob),
+	maplist(ps(HashProp), Graphs, ToDelete),
+	maplist(pso(HashProp), Graphs, Blobs, ToAdd),
+	gv_tree_triples(Tree, OldTriples),
+	ord_subtract(OldTriples, ToDelete, Triples1),
+	append(Triples1, ToAdd, Triples2),
+	sort(Triples2, NewTriples),
+	gv_create_tree_object(NewTriples, NewTree, Options).
+
 %%	gv_add_blob_to_tree(+Tree,+Graph,+Blob,-NewTree,+Opts) is det.
 %
 %	Adds/replaces the entry of Graph in Tree to form NewTree.
 %
 gv_add_blob_to_tree(Tree, Graph, Uri, NewTree, Options) :-
-	setting(gv_tree_store, StoreMode),
 	gv_tree_triples(Tree, Triples0),
 	rdf_equal(HashProp, gv:blob),
 	(   selectchk(rdf(Graph, HashProp, _OldBlob), Triples0, Triples1)
@@ -374,19 +409,28 @@ gv_add_blob_to_tree(Tree, Graph, Uri, NewTree, Options) :-
 	),
 	NewTriples0 =  [rdf(Graph, HashProp, Uri)|Triples1],
 	sort(NewTriples0, NewTriples),
-	maplist(tree_triple_to_git, NewTriples, Atoms),
+	gv_create_tree_object(NewTriples, NewTree, Options).
+
+%%	gv_create_tree_object(+Triples, -TreeURI, +Options) is det.
+%
+%	Create new tree object described by Triples,
+%	TreeURI is the Trusty URI of the created tree object
+
+gv_create_tree_object(Triples, TreeURI, Options) :-
+	setting(gv_tree_store, StoreMode),
+	maplist(tree_triple_to_git, Triples, Atoms),
 	atomic_list_concat(Atoms, TreeContent),
 	atom_length(TreeContent, Clen),
 	format(atom(TreeObject), 'tree ~d\u0000~w', [Clen, TreeContent]),
 	sha_hash(TreeObject, Sha, [encoding(octet)]),
 	hash_atom(Sha, Hash),
-	gv_hash_uri(Hash, NewTree),
+	gv_hash_uri(Hash, TreeURI),
 	(   (StoreMode == rdf_only ; StoreMode == both)
-	->  gv_graph_triples(NewTree, NewTriples)
+	->  gv_graph_triples(TreeURI, Triples)
 	;   true
 	),
 	(   (StoreMode == git_only ; StoreMode == both)
-	->  gv_store_git_object(Hash,TreeContent, [type(tree)|Options])
+	->  gv_store_git_object(Hash, TreeContent, [type(tree)|Options])
 	;   true
 	).
 
