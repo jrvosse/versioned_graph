@@ -4,26 +4,32 @@
 	  tree//1
 	  ]).
 
+:- use_module(library(semweb/rdf_db)).
 
 commit(Commit) -->
 	tree_line(T),
 	parent(P),
-	author(AName, AEmail, ADate),
-	committer(CName, CEmail, CDate),
+	author(AName, AEmail, ADate, _AZone),   % fixme, deal with timezone!
+	committer(CName, CEmail, CDate, _CZone),
 	comment(CM),!,
 	{
-	 Commit = [
-		   tree(T),
-		   parent(P),
-		   author([ author_name(AName),
-			    author_email(AEmail),
-			    author_date(ADate)
-			  ]),
-		   committer([committer_name(CName),
-			      committer_email(CEmail),
-			      committer_date(CDate)]),
-		   comment(CM)
-		  ]
+	    format(atom(AMailTo), 'mailto:~w', [AEmail]),
+	    format(atom(CMailTo), 'mailto:~w', [CEmail]),
+	    format_time(atom(AStamp), '%FT%T%:z', ADate),
+	    format_time(atom(CStamp), '%FT%T%:z', CDate),
+	    Commit0 = [
+		tree(T),
+		parent(P),
+		author([ author_url(AName),
+			 author_email(AMailTo),
+			 author_date(literal(type(xsd:dateTimeStamp, AStamp)))
+		       ]),
+		committer([committer_url(CName),
+			   committer_email(CMailTo),
+			   committer_date(literal(type(xsd:dateTimeStamp, CStamp)))]),
+		comment(CM)
+	    ],
+	    rdf_global_term(Commit0, Commit)
 	}.
 
 tree_line(T) -->
@@ -37,29 +43,33 @@ parent(P) -->
 	[10].
 parent(null) --> [].
 
-author(Name,Email,Date) -->
+author(Name,Email,Date, Zone) -->
 	[97, 117, 116, 104, 111, 114, 32],
 	name(NameC),
 	[32, 60], author_email(EmailC), [62, 32],
-	author_date(DateC,_ZoneC),
+	author_date(DateC,ZoneC),
 	[10],!,
 	{
-	 atom_codes(Name, NameC),
-	 atom_codes(Email, EmailC),
-	 atom_codes(Date, DateC)
+	    atom_codes(Name, NameC),
+	    atom_codes(Email, EmailC),
+	    atom_codes(DateA, DateC),
+	    atom_number(DateA, Date),
+	    atom_codes(Zone, ZoneC)
 	}.
 
 
-committer(Name,Email,Date) -->
+committer(Name,Email,Date,Zone) -->
 	[99, 111, 109, 109, 105, 116, 116, 101, 114, 32],
 	name(NameC),
 	[32, 60], author_email(EmailC), [62, 32],
-	author_date(DateC,_ZoneC),
+	author_date(DateC,ZoneC),
 	[10],
 	{
-	 atom_codes(Name, NameC),
-	 atom_codes(Email, EmailC),
-	 atom_codes(Date, DateC)
+	    atom_codes(Name, NameC),
+	    atom_codes(Email, EmailC),
+	    atom_codes(DateA, DateC),
+	    atom_number(DateA, Date),
+	    atom_codes(Zone, ZoneC)
 	}.
 
 
