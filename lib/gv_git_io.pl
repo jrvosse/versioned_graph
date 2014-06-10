@@ -22,22 +22,6 @@ gv_init_git :-
 	    catch(git(['init', '--bare'],[directory(Dir)]), _, fail)
 	).
 
-
-gv_init_git :-
-	fail,
-	setting(graph_version:gv_git_dir, Dir),
-	directory_file_path(Dir, '.git', DotDir),
-	directory_file_path(DotDir, objects, ObjectsDir),
-	directory_file_path(DotDir, 'HEAD', HEAD),
-	directory_file_path(DotDir, refs, RefsDir),
-	directory_file_path(RefsDir, heads, RefsHeadsDir),
-	make_directory_path(DotDir),
-	make_directory_path(ObjectsDir),
-	make_directory_path(RefsHeadsDir),
-	open(HEAD, write, Out),
-	write(Out, 'ref: refs/heads/master\n'),
-	close(Out).
-
 gv_current_branch_git(Ref) :-
 	setting(graph_version:gv_git_dir, Dir),
 	catch(git(['symbolic-ref', 'HEAD'],[directory(Dir), output(OutCodes)]), _, fail),!,
@@ -51,10 +35,10 @@ gv_commit_property_git(CommitHash, Prop) :-
 	phrase(commit(CommitObject), Codes),
 	(   memberchk(RDFPred, [parent, tree, comment])
 	->  option(Prop, CommitObject)
-	;   memberchk(RDFPred, [committer_name, committer_date, committer_email])
+	;   memberchk(RDFPred, [committer_url, committer_date, committer_email])
 	->  option(committer(C), CommitObject),
 	    option(Prop, C)
-	;   memberchk(RDFPred, [author_name, author_date, author_email])
+	;   memberchk(RDFPred, [author_url, author_date, author_email])
 	->  option(author(C), CommitObject),
 	    option(Prop, C)
 	).
