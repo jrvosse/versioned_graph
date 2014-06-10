@@ -1,9 +1,9 @@
 :- module(graph_version,
 	  [gv_init/0,
+	   gv_commit/5,
 	   gv_current_branch/1,
 	   gv_branch_head/2,
-	   gv_commit/4,
-	   gv_resource_commit/4,
+	   gv_resource_commit/4, % deprecated
 	   gv_head/1,
 	   gv_hash_uri/2,
 	   gv_copy_graph/2,
@@ -254,9 +254,9 @@ gv_move_head_rdf(Branch, NewHead) :-
 %	* gv:parent to the previous commit
 %	* gv:tree to the tree representation of the current set of
 %	  versioned graphs
-%	* gv:committer_name to Committer
+%	* gv:committer_url to Committer
 %	* gv:commiter_date to the current time
-%	* gv:author_name to Committer
+%	* gv:author_url to Committer
 %	* gv:author_date to the current time
 %	* gv:comment to Comment
 %
@@ -269,18 +269,18 @@ gv_resource_commit(Graph, Committer, Comment, Commit) :-
 		   gv_resource_commit_(
 		       Graph, Committer, Comment, Commit)).
 
-gv_commit(Graphs, Committer, Comment, Commit) :-
+gv_commit(Graphs, Committer, Comment, Commit, Options) :-
 	with_mutex(gv_commit_mutex,
 		   gv_commit_(
-		       Graphs, Committer, Comment, Commit)).
+		       Graphs, Committer, Comment, Commit, Options)).
 
-gv_commit_(Graphs0, Committer, Comment, Commit) :-
+gv_commit_(Graphs0, Committer, Comment, Commit, Options0) :-
 	is_list(Graphs0),
 	sort(Graphs0, Graphs),
 	setting(gv_git_dir, Dir),
 	gv_head(HEAD),
 	gv_commit_property(HEAD, tree(CurrentTree)),
-	Options=[directory(Dir)],
+	Options=[directory(Dir)|Options0],
 	maplist(gv_store_graph(Options),Graphs, Blobs),
 	gv_add_blobs_to_tree(CurrentTree, Graphs, Blobs, NewTree, Options),
 
@@ -298,26 +298,33 @@ gv_resource_commit_(Graph, Committer, Comment, Commit) :-
 	gv_move_head(Commit).
 
 
-gv_create_commit_object(NewTree, Committer, Comment, Commit, Options) :-
+gv_create_commit_object(NewTree, CommitterURL, Comment, Commit, Options) :-
 	setting(gv_commit_store, StoreMode),
 	gv_head(HEAD),
 	get_time(Now),
-	format_time(atom(GitTimeStamp), '%s %z', Now), % Git format
-	format_time(atom(RDFTimeStamp), '%s',    Now), % Hack format ...
+	format_time(atom(GitTimeStamp), '%s %z',    Now), % Git time format
+	format_time(atom(RDFTimeStamp), '%FT%T%:z', Now), % xsd dateTimeStamp ...
 	(   Comment = ''
 	->  CommentPair = []
 	;   CommentPair = [ po(gv:comment, literal(Comment)) ]
 	),
 
-	Email='no_email@example.com',
+	DefaultEmail='no_email@example.com',
+	option(committer_email(CommitterEmail), Options, DefaultEmail),
+	option(author_email(AuthorEmail),       Options, CommitterEmail),
+	option(author_url(AuthorURL),		Options, CommitterURL),
+	format(atom(CommitterMailto), 'mailto:%w', [CommitterEmail]),
+	format(atom(AuthorMailto),    'mailto:%w', [AuthorEmail]),
 
 	RDFObject = [ po(rdf:type, gv:'Commit'),
 		      po(gv:parent, HEAD),
 		      po(gv:tree, NewTree),
-		      po(gv:committer_name, Committer),
-		      po(gv:committer_date, literal(RDFTimeStamp)),
-		      po(gv:author_name, Committer),
-		      po(gv:author_date, literal(RDFTimeStamp))
+		      po(gv:committer_url, CommitterURL),
+		      po(gv:committer_email, CommitterMailto),
+		      po(gv:committer_date, literal(type(xsd:dateTimeStamp, RDFTimeStamp))),
+		      po(gv:author_url, AuthorURL),
+		      po(gv_author_email, AuthorMailto),
+		      po(gv:author_date, literal(type(xsd:dateTimeStamp, RDFTimeStamp)))
 		    | CommentPair
 		    ],
 	gv_hash_uri(TreeHash, NewTree),
@@ -330,8 +337,8 @@ gv_create_commit_object(NewTree, Committer, Comment, Commit, Options) :-
 	format(Out,
 	       'tree ~w~n~wauthor ~w <~w> ~w~ncommitter ~w <~w> ~w~n~n~w~n',
 	       [TreeHash, ParentLine,
-		Committer, Email, GitTimeStamp,
-		Committer, Email, GitTimeStamp,
+		AuthorURL, AuthorEmail, GitTimeStamp,
+		CommitterURL, CommitterEmail, GitTimeStamp,
 		Comment]),
 	close(Out),
 	size_memory_file(MF, ByteSize, octet), % Git counts the size in bytes not chars!
@@ -604,11 +611,11 @@ assert_commit_props([parent(null)|T], Graph) :-
 	assert_commit_props(T, Graph).
 assert_commit_props([H|T], Graph) :-
 	H =.. [P,V],
-	member(P, [comment, author_name, author_date, author_email,
-		  committer_name, committer_date, committer_email]),
+	member(P, [comment, author_url, author_date, author_email,
+		  committer_url, committer_date, committer_email]),
 	!,
 	rdf_global_id(gv:P, Pred),
-	rdf_assert(Graph, Pred, literal(V), Graph),
+        rdf_assert(Graph, Pred, V, Graph),
 	assert_commit_props(T, Graph).
 assert_commit_props([H|T], Graph) :-
 	!,
