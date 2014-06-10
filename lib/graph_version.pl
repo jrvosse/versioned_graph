@@ -316,8 +316,7 @@ gv_create_commit_object(NewTree, CommitterURL, Comment, Commit, Options) :-
 	format(atom(CommitterMailto), 'mailto:%w', [CommitterEmail]),
 	format(atom(AuthorMailto),    'mailto:%w', [AuthorEmail]),
 
-	RDFObject = [ po(rdf:type, gv:'Commit'),
-		      po(gv:parent, HEAD),
+	RDFObject = [ po(gv:parent, HEAD),
 		      po(gv:tree, NewTree),
 		      po(gv:committer_url, CommitterURL),
 		      po(gv:committer_email, CommitterMailto),
