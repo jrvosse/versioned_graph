@@ -27,7 +27,7 @@ commit(Commit) -->
 		committer([committer_url(CName),
 			   committer_email(CMailTo),
 			   committer_date(literal(type(xsd:dateTimeStamp, CStamp)))]),
-		comment(CM)
+		comment(literal(CM))
 	    ],
 	    rdf_global_term(Commit0, Commit)
 	}.
