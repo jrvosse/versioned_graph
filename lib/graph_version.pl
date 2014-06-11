@@ -89,7 +89,7 @@ gv_init :-
 
 
 gv_init_rdf(Ref) :-
-	rdf_assert(gv:default, gv:branch, Ref, 'HEAD').
+	rdf_assert(gv:current, gv:branch, Ref, 'HEAD').
 
 
 :- gv_init.
@@ -101,7 +101,7 @@ gv_init_rdf(Ref) :-
 
 gv_current_branch(Branch) :-
 	% assume current branch is stored in named graph HEAD:
-	rdf(gv:default, gv:branch, Branch, 'HEAD'),!.
+	rdf(gv:current, gv:branch, Branch, 'HEAD'),!.
 
 gv_current_branch(Branch) :-
 	\+ setting(gv_refs_store, rdf_only),
