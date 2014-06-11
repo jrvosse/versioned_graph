@@ -283,6 +283,11 @@ gv_commit_(Graphs0, Committer, Comment, Commit, Options0) :-
 	Options=[directory(Dir)|Options0],
 	maplist(gv_store_graph(Options),Graphs, Blobs),
 	gv_add_blobs_to_tree(CurrentTree, Graphs, Blobs, NewTree, Options),
+	(   CurrentTree \= NewTree
+	->  true
+	;   format(atom(Message), 'No changes on commit by ~w (~w)', [Committer, Comment]),
+	    throw(nochange(gv_commit/5, Message))
+	),
 
 	gv_create_commit_object(NewTree,Committer, Comment, Commit, Options),
 	gv_move_head(Commit).
