@@ -402,7 +402,7 @@ gv_add_blobs_to_tree(Tree, Graphs, Blobs, NewTree, Options) :-
 	maplist(ps(HashProp), Graphs, ToDelete),
 	maplist(pso(HashProp), Graphs, Blobs, ToAdd),
 	gv_tree_triples(Tree, OldTriples),
-	ord_subtract(OldTriples, ToDelete, Triples1),
+	subtract(OldTriples, ToDelete, Triples1), % ord_subtract does not unify
 	append(Triples1, ToAdd, Triples2),
 	sort(Triples2, NewTriples),
 	gv_create_tree_object(NewTriples, NewTree, Options).
