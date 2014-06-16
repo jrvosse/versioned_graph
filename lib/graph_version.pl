@@ -42,6 +42,11 @@
 :- setting(gv_refs_store, oneof([git_only, rdf_only, both]),   git_only,
 	   'Where to store HEAD, refs etc.').
 
+:- setting(gv_head_graph, uri, 'http://localhost/git/HEAD/',
+	   'Named graph for storing the HEAD in RDF').
+:- setting(gv_refs_graph, uri, 'http://localhost/git/refs/',
+	   'Named graph for storing the refs in RDF').
+
 :- listen(settings(changed(graph_version:_Setting, _Old, _New)),
 	  gv_init).
 
@@ -75,9 +80,11 @@ gv_init :-
 	setting(gv_tree_store,   TS),
 	setting(gv_commit_store, CS),
 	setting(gv_refs_store,   RS),
+	setting(gv_head_graph, HEAD),
+	setting(gv_refs_graph, Refs),
 	sort([BS,TS,CS,RS], StorageOpts),
-	rdf_equal(localgit:'refs/heads/master', Master),
-	(   (StorageOpts == [git_only] ; rdf_graph('HEAD'))
+	atom_concat(Refs, 'heads/master', Master),
+	(   (StorageOpts == [git_only] ; rdf_graph(HEAD))
 	->  true % no need to init RDF storage
 	;   gv_init_rdf(Master)
 	),
@@ -89,7 +96,8 @@ gv_init :-
 
 
 gv_init_rdf(Ref) :-
-	rdf_assert(gv:current, gv:branch, Ref, 'HEAD').
+	setting(gv_head_graph, HEAD),
+	rdf_assert(gv:current, gv:branch, Ref, HEAD).
 
 
 :- gv_init.
@@ -101,13 +109,15 @@ gv_init_rdf(Ref) :-
 
 gv_current_branch(Branch) :-
 	% assume current branch is stored in named graph HEAD:
-	rdf(gv:current, gv:branch, Branch, 'HEAD'),!.
+	setting(gv_head_graph, HEAD),
+	rdf(gv:current, gv:branch, Branch, HEAD),!.
 
 gv_current_branch(Branch) :-
 	\+ setting(gv_refs_store, rdf_only),
+	setting(gv_refs_graph, Refs),
 	% Assume current branch is the git symbolic ref HEAD:
 	gv_current_branch_git(Ref),
-	rdf_global_id(localgit:Ref, Branch).
+	atomic_concat(Refs,Ref,Branch).
 
 %%	gv_commit_property(+Commit, -Prop) is det.
 %
@@ -201,11 +211,13 @@ gv_graphs_changed([rdf(S1,P1,O1)|T1], [rdf(S2,P2,O2)|T2],
 %	Commit is unified with the tip of branch Branch.
 gv_branch_head(Branch, Commit) :-
 	\+ setting(gv_refs_store, git_only),
-	rdf(Branch, gv:tip, Commit, 'refs/heads'), !.
+	rdf(Branch, gv:tip, Commit), !.
 
 gv_branch_head(Branch, Commit) :-
 	\+ setting(gv_refs_store, rdf_only),
-	rdf_global_id(localgit:Ref, Branch),
+	setting(gv_refs_graph, Refs),
+	atom_length(Refs, RefsLen),
+	sub_atom(Branch, RefsLen,_,0, Ref),
 	gv_branch_head_git(Ref, Hash),
 	gv_hash_uri(Hash, Commit).
 
@@ -243,8 +255,10 @@ gv_move_head_(NewHead) :-
 	).
 
 gv_move_head_rdf(Branch, NewHead) :-
-	rdf_retractall(Branch, gv:tip, _OldHead, 'refs/heads'),
-	rdf_assert(    Branch, gv:tip,  NewHead, 'refs/heads').
+	setting(gv_refs_graph, Refs),
+	atomic_concat(Refs, 'heads', RefsHeads),
+	rdf_retractall(Branch, gv:tip, _OldHead, RefsHeads),
+	rdf_assert(    Branch, gv:tip,  NewHead, RefsHeads).
 
 %%      gv_resource_commit(+Graph, +Committer, +Comment, -Commit)
 %
