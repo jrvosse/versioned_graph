@@ -3,22 +3,34 @@
 @prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix dc:	<http://purl.org/dc/terms/> .
 @prefix skos:   <http://www.w3.org/2004/02/skos/core#> .
-
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
 
 :VersionObject a rdfs:Class .
 
-:Commit a :VersionObject .
+:Commit rdfs:subClassOf :VersionObject .
+:Branch a rdfs:Class .
 
 :comment rdfs:subProperty rdfs:comment .
 
-:creator rdfs:subProperty dc:creator .
+:committer_url rdfs:subProperty dc:creator .
+:author_url rdfs:subProperty dc:creator .
 
-:date    rdfs:subProperty dc:date .
+:committer_date    rdfs:subProperty dc:date .
+:author_date       rdfs:subProperty dc:date .
 
-:tree   a rdfs:Property ;
+:committer_email a owl:ObjectProperty.
+:author_email a owl:ObjectProperty.
+
+:tree   a rdf:Property ;
 	rdfs:domain :Commit ;
 	rdfs:range  :Tree .
 
-:parent a rdfs:Property ;
+:parent a rdf:Property ;
 	rdfs:domain :Commit ;
 	rdfs:range  :Commit .
+
+:tip a rdf:Property ;
+        rdfs:domain :Branch ;
+        rdfs:range  :Commit .
+:branch a rdf:Property ;
+	rdfs:range :Branch .
