@@ -1,35 +1,32 @@
 :- module(graph_version,
-	  [gv_init/0,
+	  [gv_init/0,                % Initialize RDF/GIT repo if needed
+	   gv_current_branch/1,      % -Branch, Branch is URI of current branch
+	   gv_branch_head/2,         % +Branch, -HEAD, HEAD is Trusty URI of tip of Branch
+	   gv_head/1,                % -HEAD is Trusty URI of tip of current branch
+	   gv_checkout/0,	     % Load RDF named graphs from current HEAD
+	   gv_checkout/1,	     % Restore named graphs from commit
+
 	   gv_commit/5,
-	   gv_current_branch/1,
-	   gv_branch_head/2,
 	   gv_resource_commit/4, % deprecated
-	   gv_head/1,
-	   gv_hash_uri/2,
-	   gv_copy_graph/2,
-	   gv_graph_triples/2,
 	   gv_commit_property/2,
 	   gv_diff/6,
-	   gv_checkout/0,             % Load RDF named graphs from current HEAD
-	   gv_checkout/1,             % Restore named graphs from commit
 	   gv_restore_rdf_from_git/0, % Restore HEAD + all objects
-	   gv_restore_rdf_from_git/2
+	   gv_restore_rdf_from_git/2,
+	   gv_restore_git_from_rdf/0,
+	   gv_restore_git_from_rdf/2
 	  ]).
 
 :- use_module(library(semweb/rdf_db)).
-:- use_module(library(semweb/rdf_turtle)).
-:- use_module(library(semweb/rdf_turtle_write)).
 :- use_module(library(semweb/rdf_label)).
 :- use_module(library(settings)).
 
+:- use_module(gv_namespaces).
 :- use_module(url_to_filename).
-:- use_module(hash_atom).
-:- use_module(parse_git_objects).
+:- use_module(gv_git_objects).
 :- use_module(gv_git_io).
+:- use_module(gv_hash_uri).
 
-:- rdf_register_ns(gv,       'http://semanticweb.cs.vu.nl/graph/version/').
-:- rdf_register_ns(hash,     'http://semanticweb.cs.vu.nl/graph/hash/').
-:- rdf_register_ns(localgit, 'http://localhost/git/').
+
 
 :- setting(gv_git_dir, atom, 'gv.git',
 	   'GIT repository for named graph snapshots').
@@ -49,26 +46,6 @@
 
 :- listen(settings(changed(graph_version:_Setting, _Old, _New)),
 	  gv_init).
-
-%%	gv_hash_uri(?Hash, ?URI) is det.
-%
-%	URI is a uri constructed by concatenating the
-%	Hash with some additional prefix to make it a
-%	legal URI.
-%
-%	This provides a basic one to one mapping between
-%       git's SHA1 hash ids and the URIs used in RDF.
-
-gv_hash_uri(Hash, URI) :-
-	nonvar(Hash), Hash \= null,
-	!,
-	atom_concat(x, Hash, Local),
-	rdf_global_id(hash:Local, URI).
-
-gv_hash_uri(Hash, URI) :-
-	nonvar(URI),!,
-	rdf_global_id(hash:Local, URI),
-	atom_concat(x, Hash, Local).
 
 
 %%	git_init is det.
@@ -94,7 +71,6 @@ gv_init :-
 	;   gv_init_git
 	).
 
-
 gv_init_rdf(Ref) :-
 	setting(gv_head_graph, HEAD),
 	rdf_assert(gv:current, gv:branch, Ref, HEAD).
@@ -119,6 +95,57 @@ gv_current_branch(Branch) :-
 	gv_current_branch_git(Ref),
 	atomic_concat(Refs,Ref,Branch).
 
+%%	gv_branch_head(+Branch, -Commit) is det.
+%
+%	Commit is unified with the tip of branch Branch.
+gv_branch_head(Branch, Commit) :-
+	\+ setting(gv_refs_store, git_only),
+	rdf(Branch, gv:tip, Commit), !.
+
+gv_branch_head(Branch, Commit) :-
+	\+ setting(gv_refs_store, rdf_only),
+	setting(gv_refs_graph, Refs),
+	atom_length(Refs, RefsLen),
+	sub_atom(Branch, RefsLen,_,0, Ref),
+	gv_branch_head_git(Ref, Hash),
+	gv_hash_uri(Hash, Commit).
+
+%%	gv_head(+Commit) is det.
+%
+%	Commit is the most recent commit on the current branch,
+%	or the value 'null' if there are no current branches yet.
+
+gv_head(Commit) :-
+	gv_current_branch(B),
+	gv_branch_head(B,Commit),
+	!.
+
+gv_head(null).
+
+%%	gv_checkout is det.
+%
+%	Checkout the current HEAD
+
+gv_checkout :-
+	gv_head(HEAD),
+	gv_checkout(HEAD).
+
+%%	gv_checkout(Commit) is det.
+%
+%	Checkout the named graphs in the tree of Commit into the triple
+%	store.
+
+gv_checkout(Commit) :-
+	% TODO: need to get repo in 'detached HEAD' state if commit \= HEAD ...
+	gv_commit_property(Commit, tree(Tree)),
+	gv_tree_triples(Tree, TreeTriples),
+
+	setting(gv_blob_store,  BlobsStore),
+	set_setting(gv_blob_store, git_only),
+	load_blobs(TreeTriples, graph),
+	set_setting(gv_blob_store,  BlobsStore).
+
+
 %%	gv_commit_property(+Commit, -Prop) is det.
 %
 %	True if Prop unifies with a property of Commit.
@@ -128,12 +155,20 @@ gv_commit_property(null, tree(null)) :- !.
 
 gv_commit_property(Commit, Prop) :-
 	\+ setting(gv_commit_store, git_only),
-	Prop  =.. [Local, RDFValue],
-	rdf_global_id(gv:Local, RdfProp),
-	rdf(Commit, RdfProp, Value0, Commit),
-	literal_text(Value0, RDFValue).
+	(   compound(Prop)
+	->  Prop  =.. [Local, RDFValue],
+	    rdf_global_id(gv:Local, RdfProp),
+	    rdf(Commit, RdfProp, Value0, Commit),
+	    literal_text(Value0, RDFValue),!
+	;   rdf(Commit, RdfProp, Value0, Commit),
+	    rdf_global_id(gv:Local, RdfProp),
+	    literal_text(Value0, RDFValue),
+	    Prop  =.. [Local, RDFValue]
+	).
+
 gv_commit_property(Commit, RDFProp) :-
 	setting(gv_commit_store, git_only),
+	compound(RDFProp),
 	RDFProp	=.. [RDFPred, RDFValue],
 	GitProp =.. [RDFPred, GitValue],
 	gv_hash_uri(Hash, Commit),
@@ -141,7 +176,7 @@ gv_commit_property(Commit, RDFProp) :-
 	(   memberchk(RDFPred, [parent, tree])
 	->  gv_hash_uri(GitValue, RDFValue)
 	;   GitValue = RDFValue
-	).
+	),!.
 
 
 gv_diff(Commit1, null, [], OnlyIn1, [], []) :-
@@ -206,43 +241,17 @@ gv_graphs_changed([rdf(S1,P1,O1)|T1], [rdf(S2,P2,O2)|T2],
 	    )
 	).
 
-%%	gv_branch_head(+Branch, -Commit) is det.
-%
-%	Commit is unified with the tip of branch Branch.
-gv_branch_head(Branch, Commit) :-
-	\+ setting(gv_refs_store, git_only),
-	rdf(Branch, gv:tip, Commit), !.
 
-gv_branch_head(Branch, Commit) :-
-	\+ setting(gv_refs_store, rdf_only),
-	setting(gv_refs_graph, Refs),
-	atom_length(Refs, RefsLen),
-	sub_atom(Branch, RefsLen,_,0, Ref),
-	gv_branch_head_git(Ref, Hash),
-	gv_hash_uri(Hash, Commit).
-
-%%	gv_head(+Commit) is det.
-%
-%	Commit is the most recent commit on the current branch,
-%	or the value 'null' if there are no current branches yet.
-
-gv_head(Commit) :-
-	gv_current_branch(B),
-	gv_branch_head(B,Commit),
-	!.
-
-gv_head(null).
-
-%%	gv_move_head(+NewHead) is det.
+%%	gv_move_head(+Branch, +NewHead, +Options) is det.
 %
 %	Advance head to commit NewHead.
 
-gv_move_head(NewHead) :-
-	with_mutex(gv_head_mutex, gv_move_head_(NewHead)).
+gv_move_head(Branch, NewHead, Options) :-
+	with_mutex(gv_head_mutex, gv_move_head_(Branch, NewHead, Options)).
 
-gv_move_head_(NewHead) :-
-	setting(gv_refs_store, StoreMode),
-	gv_current_branch(Branch),
+gv_move_head_(Branch, NewHead, Options) :-
+	setting(gv_refs_store, DefaultStoreMode),
+	option(gv_refs_store(StoreMode), Options, DefaultStoreMode),
 	(   (StoreMode == rdf_only ; StoreMode == both)
 	->  gv_move_head_rdf(Branch, NewHead)
 	;   true
@@ -280,8 +289,8 @@ gv_move_head_rdf(Branch, NewHead) :-
 
 gv_resource_commit(Graph, Committer, Comment, Commit) :-
 	with_mutex(gv_commit_mutex,
-		   gv_resource_commit_(
-		       Graph, Committer, Comment, Commit)).
+		   gv_commit_(
+		       [Graph], Committer, Comment, Commit, [])).
 
 gv_commit(Graphs, Committer, Comment, Commit, Options) :-
 	with_mutex(gv_commit_mutex,
@@ -292,10 +301,11 @@ gv_commit_(Graphs0, Committer, Comment, Commit, Options0) :-
 	is_list(Graphs0),
 	sort(Graphs0, Graphs),
 	setting(gv_git_dir, Dir),
-	gv_head(HEAD),
+	gv_current_branch(Branch),
+	gv_branch_head(Branch, HEAD),
 	gv_commit_property(HEAD, tree(CurrentTree)),
 	Options=[directory(Dir)|Options0],
-	maplist(gv_store_graph(Options),Graphs, Blobs),
+	maplist(gv_create_blob_object(Options),Graphs, Blobs),
 	gv_add_blobs_to_tree(CurrentTree, Graphs, Blobs, NewTree, Options),
 	(   CurrentTree \= NewTree
 	->  true
@@ -303,110 +313,9 @@ gv_commit_(Graphs0, Committer, Comment, Commit, Options0) :-
 	    throw(nochange(gv_commit/5, Message))
 	),
 
-	gv_create_commit_object(NewTree,Committer, Comment, Commit, Options),
-	gv_move_head(Commit).
+	gv_create_commit_object(NewTree, HEAD, Committer, Comment, Commit, Options),
+	gv_move_head(Branch, Commit, Options).
 
-gv_resource_commit_(Graph, Committer, Comment, Commit) :-
-	setting(gv_git_dir, Dir),
-	Options=[directory(Dir)],
-	gv_store_graph(Options, Graph, BlobUri),
-	gv_head(HEAD),
-	gv_commit_property(HEAD, tree(CurrentTree)),
-	gv_add_blob_to_tree(CurrentTree, Graph, BlobUri, NewTree, Options),
-	gv_create_commit_object(NewTree,Committer, Comment, Commit, Options),
-	gv_move_head(Commit).
-
-
-gv_create_commit_object(NewTree, CommitterURL, Comment, Commit, Options) :-
-	setting(gv_commit_store, StoreMode),
-	gv_head(HEAD),
-	get_time(Now),
-	format_time(atom(GitTimeStamp), '%s %z',    Now), % Git time format
-	format_time(atom(RDFTimeStamp), '%FT%T%:z', Now), % xsd dateTimeStamp ...
-	(   Comment = ''
-	->  CommentPair = []
-	;   CommentPair = [ po(gv:comment, literal(Comment)) ]
-	),
-
-	DefaultEmail='no_email@example.com',
-	option(committer_email(CommitterEmail), Options, DefaultEmail),
-	option(author_email(AuthorEmail),       Options, CommitterEmail),
-	option(author_url(AuthorURL),		Options, CommitterURL),
-	format(atom(CommitterMailto), 'mailto:%w', [CommitterEmail]),
-	format(atom(AuthorMailto),    'mailto:%w', [AuthorEmail]),
-
-	RDFObject = [ po(gv:parent, HEAD),
-		      po(gv:tree, NewTree),
-		      po(gv:committer_url, CommitterURL),
-		      po(gv:committer_email, CommitterMailto),
-		      po(gv:committer_date, literal(type(xsd:dateTimeStamp, RDFTimeStamp))),
-		      po(gv:author_url, AuthorURL),
-		      po(gv_author_email, AuthorMailto),
-		      po(gv:author_date, literal(type(xsd:dateTimeStamp, RDFTimeStamp)))
-		    | CommentPair
-		    ],
-	gv_hash_uri(TreeHash, NewTree),
-	(   gv_hash_uri(ParentHash, HEAD)
-	->  format(atom(ParentLine), 'parent ~w~n', [ParentHash])
-	;   ParentLine = ''
-	),
-	new_memory_file(MF),
-	open_memory_file(MF, write, Out),
-	format(Out,
-	       'tree ~w~n~wauthor ~w <~w> ~w~ncommitter ~w <~w> ~w~n~n~w~n',
-	       [TreeHash, ParentLine,
-		AuthorURL, AuthorEmail, GitTimeStamp,
-		CommitterURL, CommitterEmail, GitTimeStamp,
-		Comment]),
-	close(Out),
-	size_memory_file(MF, ByteSize, octet), % Git counts the size in bytes not chars!
-	memory_file_to_atom(MF, GitCommitContent),
-	free_memory_file(MF),
-	format(atom(GitObject), 'commit ~d\u0000~w', [ByteSize, GitCommitContent]),
-	sha_hash(GitObject, Sha, []),
-	hash_atom(Sha, Hash),
-	gv_hash_uri(Hash, Commit),
-	(   (StoreMode == rdf_only ; StoreMode == both)
-	->  rdf_global_term(RDFObject, Pairs),
-	    rdf_transaction(
-		forall(member(po(P,O), Pairs),
-		       rdf_assert(Commit, P, O, Commit)))
-	;   true
-	),
-	(   (StoreMode == git_only ; StoreMode == both)
-	->  gv_store_git_object(Hash, GitCommitContent, [type(commit)|Options])
-	;   true
-	).
-
-
-%%	gv_store_graph(+Options, +Graph, -Blob) is det.
-%
-%	Snapshot of Graph is stored in Blob.
-
-gv_store_graph(Options, Graph, Uri) :-
-	setting(gv_blob_store, StoreMode),
-	new_memory_file(MF),
-	open_memory_file(MF, write, Out),
-	(   rdf_statistics(triples_by_graph(Graph, _)) % FIXME: no longer needed in swipl 6.3.8
-	->  rdf_save_canonical_turtle(Out, [graph(Graph), encoding(utf8)])
-	;   true % empty graph, store empty file
-	),
-	close(Out),
-	size_memory_file(MF, ByteSize, octet), % Git counts the size in bytes not chars!
-	memory_file_to_atom(MF, Turtle),
-	free_memory_file(MF),
-	format(atom(Blob), 'blob ~d\u0000~w', [ByteSize, Turtle]),
-	sha_hash(Blob, Sha, []),
-	hash_atom(Sha, Hash),
-	gv_hash_uri(Hash, Uri),
-	(   (StoreMode == rdf_only ; StoreMode == both)
-	->  gv_copy_graph(Graph, Uri)
-	;   true
-	),
-	(   (StoreMode == git_only ; StoreMode == both)
-	->  gv_store_git_object(Hash, Turtle, [type(blob)|Options])
-	;   true
-	).
 
 ps(P,S, rdf(S,P,_)).
 pso(P,S,O, rdf(S,P,O)).
@@ -421,141 +330,42 @@ gv_add_blobs_to_tree(Tree, Graphs, Blobs, NewTree, Options) :-
 	sort(Triples2, NewTriples),
 	gv_create_tree_object(NewTriples, NewTree, Options).
 
-%%	gv_add_blob_to_tree(+Tree,+Graph,+Blob,-NewTree,+Opts) is det.
-%
-%	Adds/replaces the entry of Graph in Tree to form NewTree.
-%
-gv_add_blob_to_tree(Tree, Graph, Uri, NewTree, Options) :-
-	gv_tree_triples(Tree, Triples0),
-	rdf_equal(HashProp, gv:blob),
-	(   selectchk(rdf(Graph, HashProp, _OldBlob), Triples0, Triples1)
-	->  true
-	;   Triples1 = Triples0
-	),
-	NewTriples0 =  [rdf(Graph, HashProp, Uri)|Triples1],
-	sort(NewTriples0, NewTriples),
-	gv_create_tree_object(NewTriples, NewTree, Options).
-
-%%	gv_create_tree_object(+Triples, -TreeURI, +Options) is det.
-%
-%	Create new tree object described by Triples,
-%	TreeURI is the Trusty URI of the created tree object
-
-gv_create_tree_object(Triples, TreeURI, Options) :-
-	setting(gv_tree_store, StoreMode),
-	maplist(tree_triple_to_git, Triples, Atoms),
-	atomic_list_concat(Atoms, TreeContent),
-	atom_length(TreeContent, Clen),
-	format(atom(TreeObject), 'tree ~d\u0000~w', [Clen, TreeContent]),
-	sha_hash(TreeObject, Sha, [encoding(octet)]),
-	hash_atom(Sha, Hash),
-	gv_hash_uri(Hash, TreeURI),
-	(   (StoreMode == rdf_only ; StoreMode == both)
-	->  gv_graph_triples(TreeURI, Triples)
-	;   true
-	),
-	(   (StoreMode == git_only ; StoreMode == both)
-	->  gv_store_git_object(Hash, TreeContent, [type(tree)|Options])
-	;   true
-	).
-
-tree_triple_to_git(rdf(S,P,O), Atom) :-
-	rdf_equal(P, gv:blob), % just checking ...
-	gv_hash_uri(Hash, O),
-	gv_hash_atom(Codes, Hash),
-	url_to_filename(S, Filename),
-	atom_codes(HashCode,Codes),
-	format(atom(A), '100644 ~w\u0000', [Filename]),
-	atom_concat(A, HashCode, Atom).
-
 git_tree_pair_to_triple([hash(H),name(Senc)], rdf(Sdec,P,O)) :-
 	rdf_equal(P, gv:blob),
 	url_to_filename(Sdec, Senc),
 	gv_hash_uri(H,O).
 
 
-
-
-
-%%	gv_copy_graph(+Source, +Target) is det.
-%
-%	Copy graph Source to graph Target.
-
-gv_copy_graph(Source, Target) :-
-	gv_graph_triples(Source, Triples),
-	gv_graph_triples(Target, Triples).
-
-%%	gv_graph_triples(+Graph, -Triples) is det.
-%%	gv_graph_triples(+Graph, +Triples) is det.
-%
-%	When Triples are given, they are asserted to Graph,
-%       otherwise, Triples are unified with the triples in Graph.
-
-gv_graph_triples(Graph, Triples) :-
-	nonvar(Triples),
-	nonvar(Graph),!,
-	(   rdf_graph(Graph) -> rdf_unload_graph(Graph); true ),
-	rdf_transaction(
-	    forall(member(rdf(S,P,O), Triples),
-		   rdf_assert(S,P,O, Graph))).
-
-gv_graph_triples(Graph, Triples) :-
-	nonvar(Graph),
-	\+ setting(gv_blob_store, git_only),
-	var(Triples),!,
-	findall(rdf(S,P,O), rdf(S,P,O,Graph), Triples0),
-	sort(Triples0, Triples).
-
-gv_graph_triples(Blob, Triples) :-
-	setting(gv_blob_store, git_only),
-	gv_hash_uri(Hash, Blob),
-	gv_git_cat_file(Hash,Codes),
-	atom_codes(TurtleAtom,Codes),
-	format(atom(AnonPrefix), '__bnode_git_~w', [Hash]),
-	rdf_read_turtle(atom(TurtleAtom), TriplesU, [anon_prefix(AnonPrefix)]),
-	sort(TriplesU, Triples).
-
-
-gv_tree_triples(null, []).
+gv_tree_triples(null, []) :- !.
 gv_tree_triples(Tree, Triples) :-
 	nonvar(Tree),
 	rdf_graph(Tree),
-	\+ setting(gv_tree_store, git_only),
+	\+ setting(gv_tree_store, git_only),!,
 	findall(rdf(S,P,O), rdf(S,P,O,Tree), Triples0),
 	sort(Triples0, Triples).
 gv_tree_triples(Tree, Triples) :-
-	\+ setting(gv_tree_store, rdf_only),
+	\+ setting(gv_tree_store, rdf_only),!,
 	gv_hash_uri(Hash, Tree),
 	gv_parse_tree(Hash, TreeObject),
 	maplist(git_tree_pair_to_triple, TreeObject, Triples).
 
-gv_checkout :-
-	gv_head(HEAD),
-	gv_checkout(HEAD).
-
-gv_checkout(Commit) :-
-	% TODO: need to get repo in 'detached HEAD' state if commit \= HEAD ...
-	gv_commit_property(Commit, tree(Tree)),
-	gv_tree_triples(Tree, TreeTriples),
-
-	setting(gv_blob_store,  BlobsStore),
-	set_setting(gv_blob_store, git_only),
-	load_blobs(TreeTriples, graph),
-	set_setting(gv_blob_store,  BlobsStore).
-
 
 load_blobs([], _) :- !.
-load_blobs([rdf(_Blob, _P, Hash)|T], hash) :-
+load_blobs([rdf(_IRI, _P, Hash)|T], hash) :-
 	rdf_graph(Hash),!,
 	load_blobs(T, hash).
-load_blobs([rdf(Blob,_P,Hash)|T], Mode) :-
+load_blobs([rdf(IRI,_P,Hash)|T], Mode) :-
 	gv_graph_triples(Hash, Triples),
 	(   Mode == graph
-	->  gv_graph_triples(Blob, Triples)
+	->  gv_graph_triples(IRI, Triples)
 	;   gv_graph_triples(Hash, Triples)
 	),
 	load_blobs(T, Mode).
 
+store_blobs([], _) :- !.
+store_blobs([rdf(_IRI,_P, Blob)|T], Options) :-
+	gv_create_blob_object(Options, Blob, Blob),
+	store_blobs(T, Options).
 
 gv_restore_rdf_from_git :-
 	gv_restore_rdf_from_git(
@@ -567,7 +377,7 @@ gv_restore_rdf_from_git :-
 gv_restore_rdf_from_git(Options) :-
 	setting(gv_commit_store, CommitStore),
 	setting(gv_tree_store,   TreeStore),
-	setting(gv_blob_store,  BlobsStore),
+	setting(gv_blob_store,   BlobsStore),
 	setting(gv_refs_store,   RefStore),
 
 	set_setting(gv_commit_store, git_only),
@@ -578,13 +388,13 @@ gv_restore_rdf_from_git(Options) :-
 	gv_current_branch(Branch),
 	gv_branch_head(Branch, Head),
 	gv_init_rdf(Branch),  % make sure RDF is on branch too
-	gv_move_head_rdf(Branch, Head),
+	gv_move_head(Branch, Head, [gv_refs_store(rdf_only)]),
 	gv_checkout(Head),
 	gv_restore_rdf_from_git(Head, Options),
 
 	set_setting(gv_commit_store, CommitStore),
 	set_setting(gv_tree_store,   TreeStore),
-	set_setting(gv_blob_store,  BlobsStore),
+	set_setting(gv_blob_store,   BlobsStore),
 	set_setting(gv_refs_store,   RefStore).
 
 gv_restore_rdf_from_git(Commit, Options) :-
@@ -594,6 +404,46 @@ gv_restore_rdf_from_git(Commit, Options) :-
 	commit_to_rdf(Commit, Options),
 	(   gv_commit_property(Commit, parent(Parent))
 	->  gv_restore_rdf_from_git(Parent, Options)
+	;   true
+	).
+
+gv_restore_git_from_rdf :-
+	setting(graph_version:gv_git_dir, Dir),
+	gv_restore_git_from_rdf(
+	    [commits(restore),
+	     trees(restore),
+	     blobs(restore),
+	     directory(Dir)
+	    ]).
+
+gv_restore_git_from_rdf(Options) :-
+	setting(gv_commit_store, CommitStore),
+	setting(gv_tree_store,   TreeStore),
+	setting(gv_blob_store,   BlobsStore),
+	setting(gv_refs_store,   RefStore),
+
+	set_setting(gv_commit_store, rdf_only),
+	set_setting(gv_tree_store, rdf_only),
+	set_setting(gv_blob_store, rdf_only),
+	set_setting(gv_refs_store, rdf_only),
+
+	gv_current_branch(Branch),
+	gv_branch_head(Branch, Head),
+	gv_move_head(Branch, Head, [gv_refs_store(git_only)| Options]),
+	gv_restore_git_from_rdf(Head, Options),
+
+	set_setting(gv_commit_store, CommitStore),
+	set_setting(gv_tree_store,   TreeStore),
+	set_setting(gv_blob_store,   BlobsStore),
+	set_setting(gv_refs_store,   RefStore).
+
+gv_restore_git_from_rdf(Commit, Options) :-
+	debug(gv, 'Restoring commit ~p', [Commit]),
+	gv_commit_property(Commit, tree(Tree)),
+	tree_to_git(Tree, Options),
+	rdf_commit_to_git(Commit, Tree, Options),
+	(   gv_commit_property(Commit, parent(Parent))
+	->  gv_restore_git_from_rdf(Parent, Options)
 	;   true
 	).
 
@@ -612,16 +462,41 @@ tree_to_rdf(Tree, Options) :-
 	;   load_blobs(Triples, hash)
 	).
 
+tree_to_git(Tree, Options) :-
+	gv_tree_triples(Tree, Triples),
+	(   option(trees(ignore), Options)
+	->  true
+	;   gv_create_tree_object(Triples, Tree, [gv_tree_store(git_only)|Options])
+	),
+	(   option(blobs(ignore), Options)
+	->  true
+	;   store_blobs(Triples, [gv_blob_store(git_only)|Options])
+	).
+
 commit_to_rdf(Commit, Options) :-
 	(   rdf_graph(Commit)
 	->  true
 	;   option(commits(ignore), Options)
 	->  true
 	;   gv_hash_uri(Hash, Commit),
-	    gv_git_cat_file(Hash, Codes),
-	    phrase(commit(CommitObject), Codes),
+	    gv_parse_commit(Hash, CommitObject),
 	    assert_commit_props(CommitObject, Commit)
 	).
+
+rdf_commit_to_git(Commit, Tree, Options) :-
+	(   option(commits(ignore), Options)
+	->  true
+	;   gv_commit_property(Commit, comment(Comment)),
+	    gv_commit_property(Commit, committer_url(Committer)),
+	    (	gv_commit_property(Commit, parent(Parent))
+	    ->	true
+	    ;	Parent = null
+	    ),
+	    findall(P, gv_commit_property(Commit, P), CommitProps),
+	    append([CommitProps, [gv_commit_store(git_only)], Options], AllOptions),
+	    gv_create_commit_object(Tree, Parent, Committer, Comment, Commit, AllOptions)
+	).
+
 
 assert_commit_props([], _).
 assert_commit_props([parent(null)|T], Graph) :-
@@ -645,10 +520,6 @@ assert_commit_props([H|T], Graph) :-
 	;   assert_commit_props(V, Graph)
 	),
 	assert_commit_props(T, Graph).
-
-
-
-
 
 
 cliopatria:list_resource(URI) :-
