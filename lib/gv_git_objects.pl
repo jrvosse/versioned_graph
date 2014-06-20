@@ -4,8 +4,11 @@
 	    gv_create_commit_object/6,
 
 	    % do we need to export these?
-	    gv_graph_triples/2
-
+	    gv_graph_triples/2,
+	    gv_tree_triples/2,
+	    gv_load_blobs/2,
+	    gv_init_rdf/2,
+	    gv_move_head/3
 	  ]).
 
 :- use_module(library(memfile)).
@@ -198,3 +201,69 @@ tree_triple_to_git(rdf(S,P,O), Atom) :-
 	atom_codes(HashCode,Codes),
 	format(atom(A), '100644 ~w\u0000', [Filename]),
 	atom_concat(A, HashCode, Atom).
+
+git_tree_pair_to_triple([hash(H),name(Senc)], rdf(Sdec,P,O)) :-
+	rdf_equal(P, gv:blob),
+	url_to_filename(Sdec, Senc),
+	gv_hash_uri(H,O).
+
+
+gv_tree_triples(null, []) :- !.
+gv_tree_triples(Tree, Triples) :-
+	nonvar(Tree),
+	rdf_graph(Tree),
+	\+ setting(graph_version:gv_tree_store, git_only),!,
+	findall(rdf(S,P,O), rdf(S,P,O,Tree), Triples0),
+	sort(Triples0, Triples).
+gv_tree_triples(Tree, Triples) :-
+	\+ setting(graph_version:gv_tree_store, rdf_only),!,
+	gv_hash_uri(Hash, Tree),
+	gv_parse_tree(Hash, TreeObject),
+	maplist(git_tree_pair_to_triple, TreeObject, Triples).
+
+
+gv_load_blobs([], _) :- !.
+gv_load_blobs([rdf(_IRI, _P, Hash)|T], hash) :-
+	rdf_graph(Hash),!,
+	gv_load_blobs(T, hash).
+gv_load_blobs([rdf(IRI,_P,Hash)|T], Mode) :-
+	gv_graph_triples(Hash, Triples),
+	(   Mode == graph
+	->  gv_graph_triples(IRI, Triples)
+	;   gv_graph_triples(Hash, Triples)
+	),
+	gv_load_blobs(T, Mode).
+
+
+
+gv_init_rdf(Ref, Options) :-
+	option(gv_refs_prefix(Refs), Options),
+	atom_concat(Refs, 'HEAD', HEAD),
+	rdf_assert(gv:current, gv:branch, Ref, HEAD).
+
+%%	gv_move_head(+Branch, +NewHead, +Options) is det.
+%
+%	Advance head to commit NewHead.
+
+gv_move_head(Branch, NewHead, Options) :-
+	with_mutex(gv_head_mutex, gv_move_head_(Branch, NewHead, Options)).
+
+gv_move_head_(Branch, NewHead, Options) :-
+	setting(graph_version:gv_refs_store, DefaultStoreMode),
+	option(gv_refs_store(StoreMode), Options, DefaultStoreMode),
+	(   (StoreMode == rdf_only ; StoreMode == both)
+	->  gv_move_head_rdf(Branch, NewHead)
+	;   true
+	),
+	(   (StoreMode == git_only ; StoreMode == both)
+	->  gv_hash_uri(Hash, NewHead),
+	    rdf_global_id(localgit:Local, Branch),
+	    gv_move_head_git(Local, Hash)
+	;   true
+	).
+
+gv_move_head_rdf(Branch, NewHead) :-
+	setting(graph_version:gv_refs_prefix, Refs),
+	atomic_concat(Refs, 'refs/heads', RefsHeads),
+	rdf_retractall(Branch, gv:tip, _OldHead, RefsHeads),
+	rdf_assert(    Branch, gv:tip,  NewHead, RefsHeads).

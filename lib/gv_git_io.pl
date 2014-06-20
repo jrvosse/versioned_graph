@@ -1,5 +1,5 @@
 :- module(gv_git_io,
-	  [ gv_init_git/0,
+	  [ gv_init_git/1,
 	    gv_current_branch_git/1,
 	    gv_commit_property_git/2,
 	    gv_branch_head_git/2,
@@ -14,8 +14,8 @@
 :- use_module(parse_git_objects).
 
 
-gv_init_git :-
-	setting(graph_version:gv_git_dir, Dir),
+gv_init_git(Options) :-
+	option(directory(Dir), Options),
 	(   exists_directory(Dir)
 	->  true
 	;   make_directory(Dir),
