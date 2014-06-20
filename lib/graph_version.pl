@@ -7,7 +7,6 @@
 	    gv_branch_head/2,         % +Branch, -HEAD, HEAD is Trusty URI of tip of Branch
 	    gv_head/1,                % -HEAD is Trusty URI of tip of current branch
 
-	    gv_resource_commit/4, % deprecated
 	    gv_commit_property/2,
 	    gv_diff/6,
 	    gv_init/1		      % +Options
@@ -41,6 +40,29 @@
 :- listen(settings(changed(graph_version:_Setting, _Old, _New)),
 	  gv_init([])).
 
+%%	gv_commit(+Graph,+Committer,+Comment,-Commit,+Options) is det.
+%
+%
+%       Commit GraphList snapshot to the versioned graph storage.
+%	A Commit Trusty URI is created, linking to the Commit object.
+%	This object links with:
+%	* gv:comment to Comment
+%	* gv:parent to the previous commit (if any)
+%	* gv:tree to the tree representation of the current set of
+%	  versioned graphs
+%	* gv:committer_url to Committer
+%	* gv:commiter_date to the current time (or Option value)
+%	* gv:commmiter_email to the corresp. option value (if present)
+%	* gv:author_url to Committer (or Option value)
+%	* gv:author_date to the current time (or Option value)
+%	* gv:author_email to the corresp. option value (if present)
+%
+%	Todo: Fix MT issues, just a mutex is sufficient to keep triple
+%	store and repo consistent, but does not guarantee
+%	application level consitency.
+%
+%       Needs true git-like branching model?
+
 gv_commit(Graphs, Committer, Comment, Commit, Options) :-
 	with_mutex(gv_commit_mutex,
 		   gv_commit_(
@@ -66,9 +88,11 @@ gv_commit_(Graphs0, Committer, Comment, Commit, Options0) :-
 	gv_move_head(Branch, Commit, Options).
 
 
-%%	git_init is det.
+%%	gv_init(+Options) is det.
 %
 %       Initialise the RDF and/or GIT version repositories.
+%       Options can be used to override the relevant settings.
+
 gv_init(Options) :-
 	(   option(directory(Dir), Options)      -> true; setting(gv_git_dir, Dir)),
 	(   option(gv_blob_store(BS), Options)   -> true; setting(gv_blob_store, BS)),
@@ -201,6 +225,15 @@ gv_commit_property(Commit, RDFProp) :-
 	;   GitValue = RDFValue
 	),!.
 
+%%	gv_diff(C1, C2, New, O1, O2, Same) is det.
+%
+%	Compute diff between triples assoiated with the two Commits.
+%	* Same is a list of named graphs that have not changed.
+%	* New is list with changed Graphs. Each item in the list is a
+%	Graph-Diff pair, where Diff is a compound term of the form
+%	(TripleList1, TripleList2).
+%	* O1 contains a similar list with graphs only in C1
+%	* O2 contains a similar list with graphs only in C2
 
 gv_diff(Commit1, null, [], OnlyIn1, [], []) :-
 	gv_commit_property(Commit1, tree(Tree1)),
@@ -263,32 +296,6 @@ gv_graphs_changed([rdf(S1,P1,O1)|T1], [rdf(S2,P2,O2)|T2],
 		Changed = [S1-(O1,O2)|Changedt]
 	    )
 	).
-
-
-
-%%      gv_resource_commit(+Graph, +Committer, +Comment, -Commit)
-%
-%       Commit Graph to the versioned graph storage.
-%	The action is commited by creating a Commit object, this object
-%	links with:
-%	* gv:parent to the previous commit
-%	* gv:tree to the tree representation of the current set of
-%	  versioned graphs
-%	* gv:committer_url to Committer
-%	* gv:commiter_date to the current time
-%	* gv:author_url to Committer
-%	* gv:author_date to the current time
-%	* gv:comment to Comment
-%
-%	Todo: Fix MT issues, just a mutex is not sufficient.
-%	Needs true git-like branching model?
-%	Fix email handling.
-
-gv_resource_commit(Graph, Committer, Comment, Commit) :-
-	with_mutex(gv_commit_mutex,
-		   gv_commit_(
-		       [Graph], Committer, Comment, Commit, [])).
-
 
 ps(P,S, rdf(S,P,_)).
 pso(P,S,O, rdf(S,P,O)).
