@@ -1,12 +1,12 @@
 :- module(graph_version,
 	  [gv_init/0,                % Initialize RDF/GIT repo if needed
+	   gv_commit/5,		     % +GraphList, +Committer, +Message, -Commit, +Options
 	   gv_current_branch/1,      % -Branch, Branch is URI of current branch
 	   gv_branch_head/2,         % +Branch, -HEAD, HEAD is Trusty URI of tip of Branch
 	   gv_head/1,                % -HEAD is Trusty URI of tip of current branch
 	   gv_checkout/0,	     % Load RDF named graphs from current HEAD
 	   gv_checkout/1,	     % Restore named graphs from commit
 
-	   gv_commit/5,
 	   gv_resource_commit/4, % deprecated
 	   gv_commit_property/2,
 	   gv_diff/6,
