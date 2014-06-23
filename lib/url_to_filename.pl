@@ -1,16 +1,18 @@
 :- module(gv_url_to_filename,
-	  [
-	  url_to_filename/2
+	  [ url_to_filename/2
 	  ]).
+
+:- use_module(library(url)).
+:- use_module(library(lists)).
 
 %%	url_to_filename(-URL, +FileName) is det.
 %
-%	Turn  a  valid  URL  into  a  filename.  Earlier  versions  used
-%	www_form_encode/2, but this can produce  characters that are not
-%	valid  in  filenames.  We  will  use    the   same  encoding  as
-%	www_form_encode/2,  but  using  our  own    rules   for  allowed
-%	characters. The only requirement is that   we avoid any filename
-%	special character in use.  The   current  encoding  use US-ASCII
+%	Encode a valid URL into a valid filename and vice versa. Earlier
+%	versions used www_form_encode/2, but this can produce characters
+%	that are not valid in filenames. We will use the same encoding
+%	as www_form_encode/2, but using our own rules for allowed
+%	characters. The only requirement is that we avoid any filename
+%	special character in use. The current encoding use US-ASCII
 %	alnum characters, _ and %
 %
 %	Code copied from rdf_persistency:url_to_filename/2
@@ -21,7 +23,9 @@ url_to_filename(URL, FileName) :-
 	atom_codes(URL, Codes),
 	phrase(url_encode(EncCodes), Codes),
 	atom_codes(FileName, EncCodes).
+
 url_to_filename(URL, FileName) :-
+	% for _decoding_ the standard www_form_encode/2 will do.
 	www_form_encode(URL, FileName).
 
 url_encode([0'+|T]) -->
