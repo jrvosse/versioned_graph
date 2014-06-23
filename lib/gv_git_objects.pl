@@ -29,7 +29,7 @@
 :- rdf_meta
 	tree_triple_to_git(t,o).
 
-%%	gv_store_graph(+Options, +Graph, -Blob) is det.
+%%	gv_create_blob_object(+Options, +Graph, -Blob) is det.
 %
 %	Snapshot of Graph is stored in Blob.
 
@@ -82,7 +82,21 @@ gv_create_tree_object(Triples, TreeURI, Options) :-
 	->  gv_store_git_object(Hash, TreeContent, [type(tree)|Options])
 	;   true
 	).
-
+%%	gv_create_commit_object(+T, +P, +C, +M, -Commit, +O) is semidet.
+%
+%	Create a Commit object with the mandatory following properties:
+%	* tree(T)
+%	* parent(P)
+%	* committer_url(C)
+%	* comment(M).
+%
+%
+%	Optional object in Options, along with the default values
+%	* committer_email(mailto:no_email@example.com)
+%	* committer_date(now)
+%	* author_url(committer_url)
+%	* author_email(committer_email)
+%	* author_date(now)
 
 gv_create_commit_object(Tree, Parent, CommitterURL, Comment, Commit, Options) :-
 	setting(graph_version:gv_commit_store, DefaultStoreMode),
@@ -233,7 +247,7 @@ git_tree_pair_to_triple([hash(H),name(Senc)], rdf(Sdec,P,O)) :-
 	gv_hash_uri(H,O).
 
 
-%%	gv_tree_store(+Tree, -Triples) is semidet.
+%%	gv_tree_triples(+Tree, -Triples) is semidet.
 %
 %	Unify Triples with the content of tree object Tree.
 %	If Tree is a named graph in the triple store, just
@@ -254,6 +268,9 @@ gv_tree_triples(Tree, Triples) :-
 	gv_parse_tree(Hash, TreeObject),
 	maplist(git_tree_pair_to_triple, TreeObject, Triples).
 
+%%	gv_init_rdf(+Ref, +Options) is det.
+%
+%	Make sure the current branch in the head graph points to Ref.
 
 gv_init_rdf(Ref, Options) :-
 	option(gv_refs_prefix(Refs), Options),

@@ -10,10 +10,17 @@
 	    gv_parse_commit/2
 	  ]).
 
+/* Implement low level (plumbing) git commands using the SWI Prolog git library.
+*/
+
 :- use_module(library(git)).
 :- use_module(parse_git_objects).
 
-
+%%	gv_init_git(+Options) is semidet.
+%
+%	Init git directory specified in Options as a bare git
+%	repository. Succeeds silently as no-op when directory already
+%	exists.
 gv_init_git(Options) :-
 	option(directory(Dir), Options),
 	(   exists_directory(Dir)
@@ -21,6 +28,17 @@ gv_init_git(Options) :-
 	;   make_directory(Dir),
 	    catch(git(['init', '--bare'],[directory(Dir)]), _, fail)
 	).
+
+%%	gv_parse_tree(+Hash, TreeObject) is semidet.
+%
+%	Read tree object from git repository into a TreeObject term.
+gv_parse_tree(Hash, TreeObject):-
+	gv_git_cat_file(Hash, Codes),
+	phrase(tree(TreeObject), Codes).
+
+gv_parse_commit(Hash, CommitObject):-
+	gv_git_cat_file(Hash, Codes),
+	phrase(commit(CommitObject), Codes).
 
 gv_current_branch_git(Ref) :-
 	setting(graph_version:gv_git_dir, Dir),
@@ -86,10 +104,3 @@ gv_git_cat_file(Hash, Codes) :-
 	      _,
 	      fail).
 
-gv_parse_tree(Hash, TreeObject):-
-	gv_git_cat_file(Hash, Codes),
-	phrase(tree(TreeObject), Codes).
-
-gv_parse_commit(Hash, CommitObject):-
-	gv_git_cat_file(Hash, Codes),
-	phrase(commit(CommitObject), Codes).
