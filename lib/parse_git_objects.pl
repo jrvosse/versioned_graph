@@ -1,10 +1,35 @@
 :- module(gv_parse_git_objects,
-	  [
-	  commit//1,
-	  tree//1
+	  [ commit//1,
+	    % tag//1, % TODO
+	    tree//1
 	  ]).
+/** <module> Parse git commit and tree objects.
+Parse commit and tree objects from their git serialisation. Note that
+blob objects can be directly parsed using rdf_read_turtle/3.
 
+@todo: parse git tag objects
+
+@author: Jacco van Ossenbruggen
+*/
 :- use_module(library(semweb/rdf_db)).
+
+%!	tree(List)// is semidet.
+%
+%	List is property list [hash(H), name(N)].
+
+tree([H|T]) -->
+	blobline(H),!,
+	tree(T).
+tree([]) --> [].
+
+%!	commit(Commit)// is semidet.
+%
+%	Commit is a property list consisting of
+%	* tree(T)
+%	* parent(P)
+%	* author(A),
+%	* committer(C)
+%	* comment(M).
 
 commit(Commit) -->
 	tree_line(T),
@@ -137,15 +162,6 @@ xdigit(E) -->
         [E],
         { code_type(E, xdigit(_))
         }.
-
-
-
-
-
-tree([H|T]) -->
-	blobline(H),!,
-	tree(T).
-tree([]) --> [].
 
 blobline(Blob) -->
 	mode,

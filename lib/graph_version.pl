@@ -12,6 +12,11 @@
 	    gv_init/1		      % +Options
 	  ]).
 
+/** <module> Versioning named graphs
+
+@author Jacco van Ossenbruggen
+*/
+
 :- use_module(library(semweb/rdf_db)).
 :- use_module(library(semweb/rdf_label)).
 :- use_module(library(settings)).

@@ -5,7 +5,7 @@
 :- use_module(library(url)).
 :- use_module(library(lists)).
 
-%%	url_to_filename(-URL, +FileName) is det.
+%!	url_to_filename(-URL, +FileName) is det.
 %
 %	Encode a valid URL into a valid filename and vice versa. Earlier
 %	versions used www_form_encode/2, but this can produce characters
