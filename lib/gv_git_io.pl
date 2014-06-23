@@ -48,6 +48,7 @@ gv_current_branch_git(Ref) :-
 
 
 gv_commit_property_git(CommitHash, Prop) :-
+	compound(Prop),!,
 	Prop =.. [RDFPred, _RDFValue],
 	gv_git_cat_file(CommitHash, Codes),
 	phrase(commit(CommitObject), Codes),
@@ -59,6 +60,17 @@ gv_commit_property_git(CommitHash, Prop) :-
 	;   memberchk(RDFPred, [author_url, author_date, author_email])
 	->  option(author(C), CommitObject),
 	    option(Prop, C)
+	).
+gv_commit_property_git(CommitHash, Prop) :-
+	var(Prop),!,
+	gv_git_cat_file(CommitHash, Codes),
+	phrase(commit(CommitObject), Codes),
+	member(O, CommitObject),
+	O =.. [Key, Value],
+	(   memberchk(Key, [parent, tree, comment])
+	->  Prop = O
+	;   memberchk(Key, [committer, author])
+	->  member(Prop, Value)
 	).
 
 gv_branch_head_git(Ref, Hash) :-
