@@ -13,34 +13,21 @@
 :- use_module(gv_hash_uri).
 
 gv_restore_rdf_from_git :-
+	setting(graph_version:gv_refs_prefix, Prefix),
 	gv_restore_rdf_from_git(
 	    [commits(restore),
 	     trees(restore),
-	     blobs(restore)
+	     blobs(restore),
+	     gv_refs_prefix(Prefix)
 	    ]).
 
 gv_restore_rdf_from_git(Options) :-
-	setting(gv_commit_store, CommitStore),
-	setting(gv_tree_store,   TreeStore),
-	setting(gv_blob_store,   BlobsStore),
-	setting(gv_refs_store,   RefStore),
-
-	set_setting(gv_commit_store, git_only),
-	set_setting(gv_tree_store, git_only),
-	set_setting(gv_blob_store, git_only),
-	set_setting(gv_refs_store, git_only),
-
 	gv_current_branch(Branch),
 	gv_branch_head(Branch, Head),
 	gv_init_rdf(Branch, Options),  % make sure RDF is on branch too
 	gv_move_head(Branch, Head, [gv_refs_store(rdf_only)]),
 	gv_checkout(Head),
-	gv_restore_rdf_from_git(Head, Options),
-
-	set_setting(gv_commit_store, CommitStore),
-	set_setting(gv_tree_store,   TreeStore),
-	set_setting(gv_blob_store,   BlobsStore),
-	set_setting(gv_refs_store,   RefStore).
+	gv_restore_rdf_from_git(Head, Options).
 
 gv_restore_rdf_from_git(Commit, Options) :-
 	debug(gv, 'Restoring commit ~p', [Commit]),
@@ -62,25 +49,10 @@ gv_restore_git_from_rdf :-
 	    ]).
 
 gv_restore_git_from_rdf(Options) :-
-	setting(gv_commit_store, CommitStore),
-	setting(gv_tree_store,   TreeStore),
-	setting(gv_blob_store,   BlobsStore),
-	setting(gv_refs_store,   RefStore),
-
-	set_setting(gv_commit_store, rdf_only),
-	set_setting(gv_tree_store, rdf_only),
-	set_setting(gv_blob_store, rdf_only),
-	set_setting(gv_refs_store, rdf_only),
-
 	gv_current_branch(Branch),
 	gv_branch_head(Branch, Head),
 	gv_move_head(Branch, Head, [gv_refs_store(git_only)| Options]),
-	gv_restore_git_from_rdf(Head, Options),
-
-	set_setting(gv_commit_store, CommitStore),
-	set_setting(gv_tree_store,   TreeStore),
-	set_setting(gv_blob_store,   BlobsStore),
-	set_setting(gv_refs_store,   RefStore).
+	gv_restore_git_from_rdf(Head, Options).
 
 gv_restore_git_from_rdf(Commit, Options) :-
 	debug(gv, 'Restoring commit ~p', [Commit]),
