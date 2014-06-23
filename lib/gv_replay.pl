@@ -5,6 +5,8 @@
 	    gv_restore_git_from_rdf/2
 	  ]).
 
+:- use_module(library(semweb/rdf_db)).
+
 :- use_module(graph_version).
 :- use_module(gv_git_objects).
 :- use_module(gv_git_io).
