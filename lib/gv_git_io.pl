@@ -85,7 +85,8 @@ gv_move_head_git(Ref, Hash) :-
 	catch(git(['update-ref', Ref, Hash],[directory(Dir)]), _, fail).
 
 gv_store_git_object(Hash, _Object, Options) :-
-	gv_git_file_exists(Hash, Options), !.
+	gv_git_file_exists(Hash, Options), !,
+	debug(gv, 'Git object ~w already exists, save attempt ignored', [Hash]).
 
 gv_store_git_object(Hash, Object, Options) :-
 	option(type(Type), Options, blob),
