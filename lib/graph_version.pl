@@ -73,24 +73,28 @@ gv_commit(Graphs, Committer, Comment, Commit, Options) :-
 		   gv_commit_(
 		       Graphs, Committer, Comment, Commit, Options)).
 
-gv_commit_(Graphs0, Committer, Comment, Commit, Options0) :-
+gv_commit_(Graphs0, Committer, Comment, Commit, Options) :-
 	is_list(Graphs0),
 	sort(Graphs0, Graphs),
-	setting(gv_git_dir, Dir),
+	(   option(directory(Dir), Options)
+	->  NewOptions = Options, Dir \= ''
+	;   setting(gv_git_dir, Dir),
+	    NewOptions=[directory(Dir)|Options]
+	),
 	gv_current_branch(Branch),
 	gv_branch_head(Branch, HEAD),
 	gv_commit_property(HEAD, tree(CurrentTree)),
-	Options=[directory(Dir)|Options0],
-	maplist(gv_create_blob_object(Options),Graphs, Blobs),
-	gv_add_blobs_to_tree(CurrentTree, Graphs, Blobs, NewTree, Options),
+
+	maplist(gv_create_blob_object(NewOptions),Graphs, Blobs),
+	gv_add_blobs_to_tree(CurrentTree, Graphs, Blobs, NewTree, NewOptions),
 	(   CurrentTree \= NewTree
 	->  true
 	;   format(atom(Message), 'No changes on commit by ~w (~w)', [Committer, Comment]),
 	    throw(nochange(gv_commit/5, Message))
 	),
 
-	gv_create_commit_object(NewTree, HEAD, Committer, Comment, Commit, Options),
-	gv_move_head(Branch, Commit, Options).
+	gv_create_commit_object(NewTree, HEAD, Committer, literal(Comment), Commit, NewOptions),
+	gv_move_head(Branch, Commit, NewOptions).
 
 
 %%	gv_init(+Options) is det.
@@ -207,6 +211,7 @@ gv_commit_property(null, tree(null)) :- !.
 
 gv_commit_property(Commit, Prop) :-
 	\+ setting(gv_commit_store, git_only),
+	!,
 	(   compound(Prop)
 	->  Prop  =.. [Local, RDFValue],
 	    rdf_global_id(gv:Local, RdfProp),
@@ -220,15 +225,23 @@ gv_commit_property(Commit, Prop) :-
 
 gv_commit_property(Commit, RDFProp) :-
 	setting(gv_commit_store, git_only),
-	compound(RDFProp),
-	RDFProp	=.. [RDFPred, RDFValue],
-	GitProp =.. [RDFPred, GitValue],
 	gv_hash_uri(Hash, Commit),
-	gv_commit_property_git(Hash, GitProp),
-	(   memberchk(RDFPred, [parent, tree])
-	->  gv_hash_uri(GitValue, RDFValue)
-	;   GitValue = RDFValue
-	),!.
+	(   compound(RDFProp)
+	->  RDFProp =.. [RDFPred, RDFValue],
+	    GitProp =.. [RDFPred, GitValue],
+	    gv_commit_property_git(Hash, GitProp),
+	    (   memberchk(RDFPred, [parent, tree])
+	    ->  gv_hash_uri(GitValue, RDFValue)
+	    ;   GitValue = RDFValue
+	    )
+	;   gv_commit_property_git(Hash, GitProp),
+	    GitProp =.. [RDFPred, GitValue],
+	    (   memberchk(RDFPred, [parent, tree])
+	    ->  gv_hash_uri(GitValue, RDFValue)
+	    ;   GitValue = RDFValue
+	    ),
+	    RDFProp =.. [RDFPred, RDFValue]
+	).
 
 %%	gv_diff(C1, C2, New, O1, O2, Same) is det.
 %

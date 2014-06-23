@@ -17,6 +17,7 @@
 :- use_module(library(sha)).
 
 :- use_module(library(semweb/rdf_db)).
+:- use_module(library(semweb/rdf_label)).
 :- use_module(library(semweb/rdf_turtle)).
 :- use_module(library(semweb/rdf_turtle_write)).
 
@@ -101,17 +102,20 @@ gv_create_tree_object(Triples, TreeURI, Options) :-
 gv_create_commit_object(Tree, Parent, CommitterURL, Comment, Commit, Options) :-
 	setting(graph_version:gv_commit_store, DefaultStoreMode),
 	option(gv_commit_store(StoreMode), Options, DefaultStoreMode),
+
+	Comment = literal(CommitMessage),
+	(   CommitMessage = ''
+	->  CommentPair = []
+	;   CommentPair = [ po(gv:comment, Comment) ]
+	),
+
 	(   option(committer_date(RDFTimeStamp), Options)
-	->  parse_time(RDFTimeStamp, iso_8601, Now)
+	->  literal_text(RDFTimeStamp, TS),
+	    parse_time(TS, iso_8601, Now)
 	;   get_time(Now),
 	    format_time(atom(RDFTimeStamp), '%FT%T%:z', Now) % xsd dateTimeStamp ...
 	),
 	format_time(atom(GitTimeStamp), '%s %z',    Now), % Git time format
-
-	(   Comment = ''
-	->  CommentPair = []
-	;   CommentPair = [ po(gv:comment, literal(Comment)) ]
-	),
 
 	DefaultMailTo='mailto:no_email@example.com',
 	option(committer_email(CommitterMailto), Options, DefaultMailTo),
@@ -133,7 +137,7 @@ gv_create_commit_object(Tree, Parent, CommitterURL, Comment, Commit, Options) :-
 	       [TreeHash, ParentLine,
 		AuthorURL, AuthorEmail, GitTimeStamp,
 		CommitterURL, CommitterEmail, GitTimeStamp,
-		Comment]),
+		CommitMessage]),
 	close(Out),
 	size_memory_file(MF, ByteSize, octet), % Git counts the size in bytes not chars!
 	memory_file_to_atom(MF, GitCommitContent),
