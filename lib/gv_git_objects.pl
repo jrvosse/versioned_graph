@@ -6,7 +6,7 @@
 	    % do we need to export these?
 	    gv_graph_triples/2,
 	    gv_tree_triples/2,
-	    gv_load_blobs/2,
+	    gv_restore_blobs/2,
 	    gv_init_rdf/2,
 	    gv_move_head/3
 	  ]).
@@ -163,11 +163,36 @@ gv_copy_graph(Source, Target) :-
 	    gv_graph_triples(Target, Triples)
 	).
 
+%%	gv_restore_blobs(+TreeTriples, +Mode) is semidet.
+%
+%	* Mode == graph: Restore Blobs into their associated named
+%	graphs identified by IRI as defined the Tree triples in
+%	TreeTriples.
+%	* Mode == hash: Restore Blobs into their associated named graphs
+%	identified by the Trusty (hash) URI by loading them from the git
+%	repo.  (used when restoring the history from GIT).
+gv_restore_blobs([], _) :- !.
+gv_restore_blobs([rdf(_IRI, _P, Hash)|T], hash) :-
+	rdf_graph(Hash),!,
+	gv_restore_blobs(T, hash).
+gv_restore_blobs([rdf(IRI,_P,Hash)|T], Mode) :-
+	gv_graph_triples(Hash, Triples),
+	(   Mode == graph
+	->  gv_graph_triples(IRI, Triples)
+	;   gv_graph_triples(Hash, Triples)
+	),
+	gv_restore_blobs(T, Mode).
+
 %%	gv_graph_triples(+Graph, -Triples) is det.
 %%	gv_graph_triples(+Graph, +Triples) is det.
 %
-%	When Triples are given, they are asserted to Graph,
-%       otherwise, Triples are unified with the triples in Graph.
+%	When Triples are given, they are asserted to Graph.
+%
+%	When Graph is given, Triples are unified with the triples in
+%	Graph.  If Graph is an existing Graph in the triple store and
+%	graph_version:gv_blob_store is not set to git_only, the Triples
+%	are copied from Graph. Otherwise, Graph is read back from the
+%	corresponding Blob object in the git repository.
 
 gv_graph_triples(Graph, Triples) :-
 	nonvar(Triples),
@@ -208,6 +233,14 @@ git_tree_pair_to_triple([hash(H),name(Senc)], rdf(Sdec,P,O)) :-
 	gv_hash_uri(H,O).
 
 
+%%	gv_tree_store(+Tree, -Triples) is semidet.
+%
+%	Unify Triples with the content of tree object Tree.
+%	If Tree is a named graph in the triple store, just
+%       unify with these triples.
+%	If not, read Tree back from the corresponding tree object in the
+%	git repository.
+
 gv_tree_triples(null, []) :- !.
 gv_tree_triples(Tree, Triples) :-
 	nonvar(Tree),
@@ -220,20 +253,6 @@ gv_tree_triples(Tree, Triples) :-
 	gv_hash_uri(Hash, Tree),
 	gv_parse_tree(Hash, TreeObject),
 	maplist(git_tree_pair_to_triple, TreeObject, Triples).
-
-
-gv_load_blobs([], _) :- !.
-gv_load_blobs([rdf(_IRI, _P, Hash)|T], hash) :-
-	rdf_graph(Hash),!,
-	gv_load_blobs(T, hash).
-gv_load_blobs([rdf(IRI,_P,Hash)|T], Mode) :-
-	gv_graph_triples(Hash, Triples),
-	(   Mode == graph
-	->  gv_graph_triples(IRI, Triples)
-	;   gv_graph_triples(Hash, Triples)
-	),
-	gv_load_blobs(T, Mode).
-
 
 
 gv_init_rdf(Ref, Options) :-

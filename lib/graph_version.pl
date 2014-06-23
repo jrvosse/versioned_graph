@@ -189,7 +189,7 @@ gv_checkout(Commit) :-
 
 	setting(gv_blob_store,  BlobsStore),
 	set_setting(gv_blob_store, git_only),
-	gv_load_blobs(TreeTriples, graph),
+	gv_restore_blobs(TreeTriples, graph),
 	set_setting(gv_blob_store,  BlobsStore).
 
 

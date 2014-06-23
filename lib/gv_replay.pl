@@ -103,7 +103,7 @@ tree_to_rdf(Tree, Options) :-
 	),
 	(   option(blobs(ignore), Options)
 	->  true
-	;   gv_load_blobs(Triples, hash)
+	;   gv_restore_blobs(Triples, hash)
 	).
 
 tree_to_git(Tree, Options) :-
