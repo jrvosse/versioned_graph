@@ -7,7 +7,7 @@
 Parse commit and tree objects from their git serialisation. Note that
 blob objects can be directly parsed using rdf_read_turtle/3.
 
-@todo: parse git tag objects
+todo: parse git tag objects
 
 @author: Jacco van Ossenbruggen
 */
