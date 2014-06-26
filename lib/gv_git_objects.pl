@@ -192,6 +192,8 @@ gv_copy_graph(Source, Target) :-
 gv_restore_blobs([], _) :- !.
 gv_restore_blobs([rdf(_IRI, _P, Hash)|T], hash) :-
 	rdf_graph(Hash),!,
+	debug(gv, 'Blob graph ~p already exists, restore attempt ignored',
+	      [Hash]),
 	gv_restore_blobs(T, hash).
 gv_restore_blobs([rdf(IRI,_P,Hash)|T], Mode) :-
 	gv_graph_triples(Hash, Triples),

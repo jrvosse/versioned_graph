@@ -66,7 +66,7 @@ gv_restore_git_from_rdf(Commit, Options) :-
 tree_to_rdf(Tree, Options) :-
 	gv_tree_triples(Tree, Triples),
 	(   rdf_graph(Tree)
-	->  true
+	->  debug(gv, 'Tree graph ~p already exists, restore attempt ignored', [Tree])
 	;
 	    (	option(trees(ignore), Options)
 	    ->  true
@@ -91,7 +91,8 @@ tree_to_git(Tree, Options) :-
 
 git_commit_to_rdf(Commit, Options) :-
 	(   rdf_graph(Commit)
-	->  true
+	->  debug(gv, 'Commit graph ~p already exists, restore attempt ignored',
+		  [Commit])
 	;   option(commits(ignore), Options)
 	->  true
 	;   gv_hash_uri(Hash, Commit),
